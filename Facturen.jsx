@@ -284,9 +284,51 @@ export default function Facturen() {
     <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: "32px 20px" }}>
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
         <header style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0 }}>Facturen</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>Facturen</h1>
           <p style={{ color: "#999", marginTop: 4, fontSize: 14 }}>Weekfacturen genereren en beheren</p>
         </header>
+
+        {!loading && invoices.length > 0 && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              gap: 12,
+              marginBottom: 20,
+            }}
+          >
+            <TotaalKaart
+              label="Totaal (alle facturen)"
+              waarde={euro(invoices.reduce((s, f) => s + Number(f.totaal), 0))}
+              sub={`${invoices.length} facturen`}
+              kleur="#8b5cf6"
+            />
+            <TotaalKaart
+              label="Nog te ontvangen"
+              waarde={euro(
+                invoices.filter((f) => f.status === "verzonden").reduce((s, f) => s + Number(f.totaal), 0)
+              )}
+              sub="status: verzonden"
+              kleur="#f59e0b"
+            />
+            <TotaalKaart
+              label="Ontvangen"
+              waarde={euro(
+                invoices.filter((f) => f.status === "betaald").reduce((s, f) => s + Number(f.totaal), 0)
+              )}
+              sub="status: betaald"
+              kleur="#22c55e"
+            />
+            <TotaalKaart
+              label="Gecrediteerd"
+              waarde={euro(
+                invoices.filter((f) => f.credit_van_factuur_id).reduce((s, f) => s + Number(f.totaal), 0)
+              )}
+              sub="creditfacturen"
+              kleur="#c0392b"
+            />
+          </div>
+        )}
 
         <div
           style={{
@@ -302,7 +344,7 @@ export default function Facturen() {
             gap: 12,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <button onClick={vorigeWeek} style={navBtn}>←</button>
             <div style={{ fontSize: 14 }}>
               Week: <strong>{fmtDatum(weergaveWeek.start)} – {fmtDatum(weergaveWeek.eind)}</strong>
@@ -413,16 +455,28 @@ export default function Facturen() {
   );
 }
 
-const cardStyle = { background: "#fff", borderRadius: 14, padding: 18 };
+function TotaalKaart({ label, waarde, sub, kleur }) {
+  return (
+    <div style={{ background: "#fff", borderRadius: 16, padding: 16, borderTop: `3px solid ${kleur}`, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
+      <div style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: 19, fontWeight: 700, color: "#111", marginTop: 4 }}>{waarde}</div>
+      <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>{sub}</div>
+    </div>
+  );
+}
+
+const cardStyle = { background: "#fff", borderRadius: 16, padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" };
 const primaryBtn = {
   background: PINK,
   color: "#fff",
   border: "none",
-  borderRadius: 8,
-  padding: "10px 18px",
+  borderRadius: 10,
+  padding: "10px 20px",
   fontWeight: 600,
   fontSize: 14,
   cursor: "pointer",
+  boxShadow: "0 2px 6px rgba(249,132,229,0.35)",
+  transition: "transform 0.1s ease, box-shadow 0.15s ease",
   whiteSpace: "nowrap",
 };
 const secundaireBtn = {
