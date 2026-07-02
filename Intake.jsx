@@ -62,7 +62,7 @@ export default function Intake() {
     <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: "32px 20px" }}>
       <div style={{ maxWidth: 800, margin: "0 auto" }}>
         <header style={{ marginBottom: 24 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0 }}>Intake-antwoorden</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>Intake-antwoorden</h1>
           <p style={{ color: "#999", marginTop: 4, fontSize: 14 }}>
             Binnengekomen via het online intakeformulier
           </p>
@@ -170,7 +170,7 @@ export default function Intake() {
   );
 }
 
-const cardStyle = { background: "#fff", borderRadius: 14, padding: 18, cursor: "pointer" };
+const cardStyle = { background: "#fff", borderRadius: 16, padding: 18, cursor: "pointer", boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)", transition: "box-shadow 0.15s ease, transform 0.15s ease" };
 const backBtn = {
   background: "none",
   border: "none",
@@ -188,4 +188,3 @@ const selectStyle = {
   fontSize: 13,
   fontFamily: "inherit",
 };
-
