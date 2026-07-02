@@ -5,6 +5,63 @@ import { genereerFactuurPDF } from "./factuurPdf";
 const PINK = "#F984E5";
 const PAARS = "#8b5cf6";
 const BTW = 0.21;
+const INTAKE_URL = "https://intakeformulier-gf82.vercel.app/";
+
+function IntakeBlok({ client }) {
+  const [mailStatus, setMailStatus] = useState("");
+
+  async function verstuurViaMail() {
+    if (!client.email) {
+      alert("Deze klant heeft geen e-mailadres ingevuld.");
+      return;
+    }
+    setMailStatus("bezig");
+    try {
+      const response = await fetch("/api/verstuur-intake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: client.email, naam: client.naam }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setMailStatus("fout");
+        alert("Versturen mislukt: " + (result.error || "onbekende fout"));
+        return;
+      }
+      setMailStatus("verstuurd");
+    } catch (err) {
+      setMailStatus("fout");
+      alert("Versturen mislukt: " + err.message);
+    }
+  }
+
+  function verstuurViaWhatsapp() {
+    if (!client.telefoon) {
+      alert("Deze klant heeft geen telefoonnummer ingevuld.");
+      return;
+    }
+    const bericht = `Hoi ${client.naam}, wil je het intakeformulier van Open Your Mind Bewustzijn invullen voor onze eerste sessie? ${INTAKE_URL}`;
+    let nummer = client.telefoon.replace(/[^0-9]/g, "");
+    if (nummer.startsWith("0")) nummer = "31" + nummer.slice(1);
+    window.open(`https://wa.me/${nummer}?text=${encodeURIComponent(bericht)}`, "_blank");
+  }
+
+  return (
+    <div style={{ background: "#fff", color: "#111", borderRadius: 16, padding: 24, marginBottom: 20 }}>
+      <h3 style={{ marginTop: 0, marginBottom: 6 }}>Intakeformulier</h3>
+      <p style={{ fontSize: 13, color: "#999", marginTop: 0, marginBottom: 14 }}>{INTAKE_URL}</p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button style={secundaireBtn} onClick={verstuurViaMail} disabled={mailStatus === "bezig"}>
+          {mailStatus === "bezig" ? "Versturen..." : mailStatus === "verstuurd" ? "✓ Verstuurd" : "Verstuur via mail"}
+        </button>
+        <button style={{ ...secundaireBtn, color: "#22c55e", borderColor: "#22c55e" }} onClick={verstuurViaWhatsapp}>
+          Verstuur via WhatsApp
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const STADIA = ["Startfase", "Bewustwording", "Verdieping", "Stabilisatie", "Integratie", "Afronding"];
 const STATUSSEN = ["nieuw", "actief", "niet actief", "issue"];
 const statusKleur = (status) => {
@@ -443,6 +500,7 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
       </div>
 
       <VervolgafspraakBlok client={client} onUpdated={onUpdated} />
+      <IntakeBlok client={client} />
       <VoortgangBlok client={client} onUpdated={onUpdated} />
 
       <h3 style={{ marginBottom: 12 }}>Sessieverslagen</h3>
@@ -504,6 +562,9 @@ function VervolgafspraakBlok({ client, onUpdated }) {
   const [datum, setDatum] = useState(huidigeWaarde ? huidigeWaarde.toISOString().slice(0, 10) : "");
   const [tijd, setTijd] = useState(huidigeWaarde ? huidigeWaarde.toTimeString().slice(0, 5) : "10:00");
   const [duur, setDuur] = useState(75);
+  const [locatie, setLocatie] = useState(
+    client.adres ? `${client.adres}${client.plaats ? ", " + client.plaats : ""}` : ""
+  );
   const [bezig, setBezig] = useState(false);
   const [mailStatus, setMailStatus] = useState("");
 
@@ -524,7 +585,7 @@ function VervolgafspraakBlok({ client, onUpdated }) {
     const link = googleAgendaLink({
       titel: `Afspraak met ${client.naam}`,
       beschrijving: `Begeleidingssessie met ${client.naam}${client.dossiernummer ? ` (dossier ${client.dossiernummer})` : ""}`,
-      locatie: client.adres ? `${client.adres}${client.plaats ? ", " + client.plaats : ""}` : "",
+      locatie: locatie,
       start: startDatumTijd,
       eindMinutenLater: duur,
     });
@@ -554,7 +615,7 @@ function VervolgafspraakBlok({ client, onUpdated }) {
           naam: client.naam,
           datumTijd: startDatumTijd.toISOString(),
           duurMinuten: duur,
-          locatie: client.adres ? `${client.adres}${client.plaats ? ", " + client.plaats : ""}` : "",
+          locatie: locatie,
         }),
       });
       const result = await response.json();
@@ -568,6 +629,26 @@ function VervolgafspraakBlok({ client, onUpdated }) {
       setMailStatus("fout");
       alert("Versturen mislukt: " + err.message);
     }
+  }
+
+  function whatsappVersturen() {
+    if (!client.telefoon) {
+      alert("Deze klant heeft geen telefoonnummer ingevuld.");
+      return;
+    }
+    if (!datum) {
+      alert("Kies eerst een datum.");
+      return;
+    }
+    const startDatumTijd = new Date(`${datum}T${tijd}`);
+    const datumLabel = startDatumTijd.toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" });
+    const bericht = `Hoi ${client.naam}, je afspraak bij Open Your Mind Bewustzijn staat gepland op ${datumLabel} om ${tijd} uur.${
+      locatie ? ` Locatie: ${locatie}.` : ""
+    } Tot dan!`;
+    let nummer = client.telefoon.replace(/[^0-9]/g, "");
+    if (nummer.startsWith("0")) nummer = "31" + nummer.slice(1);
+    const link = `https://wa.me/${nummer}?text=${encodeURIComponent(bericht)}`;
+    window.open(link, "_blank");
   }
 
   return (
@@ -615,6 +696,16 @@ function VervolgafspraakBlok({ client, onUpdated }) {
         </div>
       </div>
 
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: "block", fontSize: 13, color: "#555", marginBottom: 4 }}>Locatie</label>
+        <input
+          style={inputStyle}
+          value={locatie}
+          onChange={(e) => setLocatie(e.target.value)}
+          placeholder="Bijv. adres van de klant, of je praktijkadres"
+        />
+      </div>
+
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button style={primaryBtn} onClick={afspraakPlannen} disabled={bezig}>
           {bezig ? "Bezig..." : "Plan in Google Agenda"}
@@ -625,6 +716,9 @@ function VervolgafspraakBlok({ client, onUpdated }) {
             : mailStatus === "verstuurd"
             ? "✓ Bevestiging verstuurd"
             : "Verstuur bevestiging per mail"}
+        </button>
+        <button style={{ ...secundaireBtn, color: "#22c55e", borderColor: "#22c55e" }} onClick={whatsappVersturen}>
+          Verstuur via WhatsApp
         </button>
       </div>
     </div>
@@ -785,23 +879,19 @@ function NieuweKlantModal({ organisaties, onClose, onCreated }) {
   });
   const [saving, setSaving] = useState(false);
   const [lokaleOrganisaties, setLokaleOrganisaties] = useState(organisaties || []);
-  const [nieuweOrgNaam, setNieuweOrgNaam] = useState("");
+  const [nieuweOrgForm, setNieuweOrgForm] = useState({ naam: "", adres: "", contactpersoon: "", email: "" });
   const [orgToevoegen, setOrgToevoegen] = useState(false);
 
   async function organisatieToevoegen() {
-    if (!nieuweOrgNaam.trim()) return;
-    const { data, error } = await supabase
-      .from("organisaties")
-      .insert([{ naam: nieuweOrgNaam.trim() }])
-      .select()
-      .single();
+    if (!nieuweOrgForm.naam.trim()) return;
+    const { data, error } = await supabase.from("organisaties").insert([nieuweOrgForm]).select().single();
     if (error) {
       alert("Kon organisatie niet toevoegen: " + error.message);
       return;
     }
     setLokaleOrganisaties((prev) => [...prev, data]);
     setForm((f) => ({ ...f, organisatie_id: data.id }));
-    setNieuweOrgNaam("");
+    setNieuweOrgForm({ naam: "", adres: "", contactpersoon: "", email: "" });
     setOrgToevoegen(false);
   }
 
@@ -844,28 +934,48 @@ function NieuweKlantModal({ organisaties, onClose, onCreated }) {
             </button>
           </div>
         ) : (
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ border: "1px solid #eee", borderRadius: 10, padding: 12 }}>
             <input
-              style={{ ...inputStyle, flex: 1 }}
-              placeholder="Naam nieuwe organisatie"
-              value={nieuweOrgNaam}
-              onChange={(e) => setNieuweOrgNaam(e.target.value)}
+              style={{ ...inputStyle, marginBottom: 8 }}
+              placeholder="Naam organisatie *"
+              value={nieuweOrgForm.naam}
+              onChange={(e) => setNieuweOrgForm({ ...nieuweOrgForm, naam: e.target.value })}
               autoFocus
             />
-            <button
-              type="button"
-              onClick={organisatieToevoegen}
-              style={{ ...primaryBtn, padding: "8px 12px", fontSize: 13 }}
-            >
-              Toevoegen
-            </button>
-            <button
-              type="button"
-              onClick={() => setOrgToevoegen(false)}
-              style={{ background: "none", border: "1px solid #ddd", borderRadius: 8, padding: "8px 12px", fontSize: 13, cursor: "pointer" }}
-            >
-              Annuleren
-            </button>
+            <textarea
+              style={{ ...inputStyle, marginBottom: 8, minHeight: 50 }}
+              placeholder="Adres (voor op de factuur)"
+              value={nieuweOrgForm.adres}
+              onChange={(e) => setNieuweOrgForm({ ...nieuweOrgForm, adres: e.target.value })}
+            />
+            <input
+              style={{ ...inputStyle, marginBottom: 8 }}
+              placeholder="Contactpersoon"
+              value={nieuweOrgForm.contactpersoon}
+              onChange={(e) => setNieuweOrgForm({ ...nieuweOrgForm, contactpersoon: e.target.value })}
+            />
+            <input
+              style={{ ...inputStyle, marginBottom: 10 }}
+              placeholder="E-mailadres (voor facturen)"
+              value={nieuweOrgForm.email}
+              onChange={(e) => setNieuweOrgForm({ ...nieuweOrgForm, email: e.target.value })}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={organisatieToevoegen}
+                style={{ ...primaryBtn, padding: "8px 12px", fontSize: 13, flex: 1 }}
+              >
+                Organisatie opslaan
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrgToevoegen(false)}
+                style={{ background: "none", border: "1px solid #ddd", borderRadius: 8, padding: "8px 12px", fontSize: 13, cursor: "pointer" }}
+              >
+                Annuleren
+              </button>
+            </div>
           </div>
         )}
       </Field>
