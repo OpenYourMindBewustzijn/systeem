@@ -5,6 +5,8 @@ import Login from "./Login";
 import Dashboard from "./Dashboard";
 import ClientenBeheer from "./ClientenBeheer";
 import Facturen from "./Facturen";
+import Organisaties from "./Organisaties";
+import Intake from "./Intake";
 
 const PINK = "#F984E5";
 
@@ -38,6 +40,8 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/klanten" element={<ClientenBeheer />} />
+        <Route path="/organisaties" element={<Organisaties />} />
+        <Route path="/intake" element={<Intake />} />
         <Route path="/facturen" element={<Facturen />} />
       </Routes>
     </BrowserRouter>
@@ -72,6 +76,8 @@ function NavBalk() {
       <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, marginRight: 8 }}>OYMB</span>
       <Link to="/dashboard" style={linkStyle("/dashboard")}>Dashboard</Link>
       <Link to="/klanten" style={linkStyle("/klanten")}>Klanten</Link>
+      <Link to="/organisaties" style={linkStyle("/organisaties")}>Organisaties</Link>
+      <Link to="/intake" style={linkStyle("/intake")}>Intake</Link>
       <Link to="/facturen" style={linkStyle("/facturen")}>Facturen</Link>
       <div style={{ flex: 1 }} />
       <button
