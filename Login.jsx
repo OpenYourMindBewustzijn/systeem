@@ -80,9 +80,11 @@ const primaryBtn = {
   background: PINK,
   color: "#fff",
   border: "none",
-  borderRadius: 8,
-  padding: "10px 18px",
+  borderRadius: 10,
+  padding: "10px 20px",
   fontWeight: 600,
   fontSize: 14,
   cursor: "pointer",
+  boxShadow: "0 2px 6px rgba(249,132,229,0.35)",
+  transition: "transform 0.1s ease, box-shadow 0.15s ease",
 };
