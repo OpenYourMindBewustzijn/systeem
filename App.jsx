@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import Login from "./Login";
+import Dashboard from "./Dashboard";
 import ClientenBeheer from "./ClientenBeheer";
 import Facturen from "./Facturen";
 
@@ -34,7 +35,8 @@ export default function App() {
     <BrowserRouter>
       <NavBalk />
       <Routes>
-        <Route path="/" element={<ClientenBeheer />} />
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/klanten" element={<ClientenBeheer />} />
         <Route path="/facturen" element={<Facturen />} />
       </Routes>
@@ -68,6 +70,7 @@ function NavBalk() {
       }}
     >
       <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, marginRight: 8 }}>OYMB</span>
+      <Link to="/dashboard" style={linkStyle("/dashboard")}>Dashboard</Link>
       <Link to="/klanten" style={linkStyle("/klanten")}>Klanten</Link>
       <Link to="/facturen" style={linkStyle("/facturen")}>Facturen</Link>
       <div style={{ flex: 1 }} />
