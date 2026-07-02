@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 
 const PINK = "#F984E5";
@@ -9,6 +10,7 @@ const fmtMaand = (d) => new Date(d).toLocaleDateString("nl-NL", { month: "long",
 const fmtDatum = (d) => new Date(d).toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [openstaand, setOpenstaand] = useState(null);
   const [omzetPerMaand, setOmzetPerMaand] = useState([]);
   const [statusVerdeling, setStatusVerdeling] = useState([]);
@@ -16,6 +18,8 @@ export default function Dashboard() {
   const [bijnaVol, setBijnaVol] = useState([]);
   const [afspraken, setAfspraken] = useState([]);
   const [zonderAfspraak, setZonderAfspraak] = useState([]);
+  const [zonderVerslag, setZonderVerslag] = useState([]);
+  const [bezigId, setBezigId] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,13 +28,14 @@ export default function Dashboard() {
 
   async function laadAlles() {
     setLoading(true);
-    const [openstaandRes, omzetRes, statusRes, teOntvangenRes, voortgangRes, klantenRes] = await Promise.all([
+    const [openstaandRes, omzetRes, statusRes, teOntvangenRes, voortgangRes, klantenRes, zonderVerslagRes] = await Promise.all([
       supabase.from("dashboard_openstaand").select("*").single(),
       supabase.from("dashboard_omzet_per_maand").select("*").limit(12),
       supabase.from("dashboard_status_verdeling").select("*"),
       supabase.from("dashboard_te_ontvangen").select("*"),
       supabase.from("client_voortgang").select("*"),
       supabase.from("clients").select("id, naam, status, volgende_afspraak").order("volgende_afspraak", { ascending: true }),
+      supabase.from("dashboard_afspraken_zonder_verslag").select("*"),
     ]);
 
     setOpenstaand(openstaandRes.data);
@@ -38,6 +43,7 @@ export default function Dashboard() {
     setStatusVerdeling(statusRes.data || []);
     setTeOntvangen(teOntvangenRes.data || []);
     setBijnaVol((voortgangRes.data || []).filter((v) => v.uren_resterend <= 5 && v.uren_resterend >= 0));
+    setZonderVerslag(zonderVerslagRes.data || []);
 
     const klanten = klantenRes.data || [];
     const nu = new Date();
@@ -49,6 +55,22 @@ export default function Dashboard() {
     setZonderAfspraak(klanten.filter((k) => !k.volgende_afspraak && k.status === "actief"));
 
     setLoading(false);
+  }
+
+  async function markeerGeweest(afspraakId) {
+    setBezigId(afspraakId);
+    await supabase.from("afspraken").update({ status: "geweest" }).eq("id", afspraakId);
+    await laadAlles();
+    setBezigId(null);
+  }
+
+  async function markeerNoShow(afspraakId) {
+    const reden = prompt("Waarom is deze afspraak niet doorgegaan? (optioneel)");
+    if (reden === null) return; // geannuleerd
+    setBezigId(afspraakId);
+    await supabase.from("afspraken").update({ status: "no_show", no_show_reden: reden || null }).eq("id", afspraakId);
+    await laadAlles();
+    setBezigId(null);
   }
 
   const ditJaar = new Date().getFullYear();
@@ -91,17 +113,26 @@ export default function Dashboard() {
             waarde={euro(openstaand?.openstaand_excl_btw)}
             sub={`${openstaand?.aantal_sessies || 0} sessie${openstaand?.aantal_sessies === 1 ? "" : "s"}`}
             kleur={PINK}
+            onClick={() => navigate("/klanten")}
           />
           <KpiKaart
             label={`Gefactureerd in ${dezeMaandLabel}`}
             waarde={euro(omzetDezeMaand?.omzet_excl_btw || 0)}
             sub={`${omzetDezeMaand?.aantal_facturen || 0} facturen`}
             kleur={PAARS}
+            onClick={() => navigate("/facturen")}
           />
-          <KpiKaart label={`Omzet ${ditJaar}`} waarde={euro(omzetDitJaar)} sub="excl. btw" kleur="#22c55e" />
+          <KpiKaart
+            label={`Omzet ${ditJaar}`}
+            waarde={euro(omzetDitJaar)}
+            sub="excl. btw"
+            kleur="#22c55e"
+            onClick={() => navigate("/facturen")}
+          />
           <KpiKaart
             label="Nog te ontvangen"
             waarde={euro(teOntvangenTotaal)}
+            onClick={() => navigate("/facturen")}
             sub={`${teOntvangen.length} verzonden factu${teOntvangen.length === 1 ? "ur" : "ren"}`}
             kleur="#f59e0b"
           />
@@ -136,7 +167,7 @@ export default function Dashboard() {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, marginBottom: 20 }}>
           {/* Status verdeling */}
-          <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
+          <div onClick={() => navigate("/facturen")} style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)", cursor: "pointer" }}>
             <h3 style={{ margin: "0 0 16px", color: "#111" }}>Facturen per status</h3>
             {["concept", "verzonden", "betaald"].map((status) => {
               const s = statusMap[status];
@@ -157,7 +188,7 @@ export default function Dashboard() {
           </div>
 
           {/* Klanten bijna door hun uren */}
-          <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
+          <div onClick={() => navigate("/klanten")} style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)", cursor: "pointer" }}>
             <h3 style={{ margin: "0 0 16px", color: "#111" }}>Bijna door hun uren</h3>
             {bijnaVol.length === 0 ? (
               <p style={{ color: "#999", fontSize: 14 }}>Geen klanten met minder dan 5 uur over.</p>
@@ -174,9 +205,85 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Verlopen afspraken zonder verslag of no-show */}
+        {zonderVerslag.length > 0 && (
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: 24,
+              marginBottom: 20,
+              boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)",
+              borderLeft: "4px solid #c0392b",
+            }}
+          >
+            <h3 style={{ margin: "0 0 4px", color: "#111" }}>⚠ Afspraken zonder verslag</h3>
+            <p style={{ fontSize: 13, color: "#999", margin: "0 0 16px" }}>
+              Deze afspraken zijn verlopen, maar er is nog geen verslag toegevoegd of no-show gemeld.
+            </p>
+            {zonderVerslag.map((a) => (
+              <div
+                key={a.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "10px 0",
+                  borderBottom: "1px solid #f0f0f0",
+                  flexWrap: "wrap",
+                  gap: 8,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 14, color: "#333", fontWeight: 600 }}>{a.client_naam}</div>
+                  <div style={{ fontSize: 12, color: "#999" }}>
+                    {new Date(a.datum_tijd).toLocaleDateString("nl-NL", { day: "numeric", month: "long" })}
+                    {" · "}
+                    {new Date(a.datum_tijd).toTimeString().slice(0, 5)}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => markeerGeweest(a.id)}
+                    disabled={bezigId === a.id}
+                    style={{
+                      fontSize: 12,
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #22c55e",
+                      background: "#fff",
+                      color: "#22c55e",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✓ Geweest
+                  </button>
+                  <button
+                    onClick={() => markeerNoShow(a.id)}
+                    disabled={bezigId === a.id}
+                    style={{
+                      fontSize: 12,
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: "1px solid #c0392b",
+                      background: "#fff",
+                      color: "#c0392b",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    No-show
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Geplande afspraken */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, marginBottom: 20 }}>
-          <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
+          <div onClick={() => navigate("/klanten")} style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)", cursor: "pointer" }}>
             <h3 style={{ margin: "0 0 16px", color: "#111" }}>Aankomende afspraken</h3>
             {afspraken.length === 0 ? (
               <p style={{ color: "#999", fontSize: 14 }}>Geen afspraken gepland.</p>
@@ -194,7 +301,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
+          <div onClick={() => navigate("/klanten")} style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)", cursor: "pointer" }}>
             <h3 style={{ margin: "0 0 16px", color: "#111" }}>Actief zonder vervolgafspraak</h3>
             {zonderAfspraak.length === 0 ? (
               <p style={{ color: "#999", fontSize: 14 }}>Alle actieve klanten hebben een afspraak gepland.</p>
@@ -210,7 +317,7 @@ export default function Dashboard() {
         </div>
 
         {/* Nog te ontvangen (verzonden, onbetaald) */}
-        <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
+        <div onClick={() => navigate("/facturen")} style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)", cursor: "pointer" }}>
           <h3 style={{ margin: "0 0 16px", color: "#111" }}>Openstaande facturen (verzonden, nog niet betaald)</h3>
           {teOntvangen.length === 0 ? (
             <p style={{ color: "#999", fontSize: 14 }}>Niets openstaand — mooi zo.</p>
@@ -233,9 +340,20 @@ export default function Dashboard() {
   );
 }
 
-function KpiKaart({ label, waarde, sub, kleur }) {
+function KpiKaart({ label, waarde, sub, kleur, onClick }) {
   return (
-    <div style={{ background: "#fff", borderRadius: 16, padding: 18, borderTop: `3px solid ${kleur}`, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
+    <div
+      onClick={onClick}
+      style={{
+        background: "#fff",
+        borderRadius: 16,
+        padding: 18,
+        borderTop: `3px solid ${kleur}`,
+        boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)",
+        cursor: onClick ? "pointer" : "default",
+        transition: "transform 0.1s ease, box-shadow 0.15s ease",
+      }}
+    >
       <div style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 700, color: "#111", marginTop: 4 }}>{waarde}</div>
       <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>{sub}</div>
