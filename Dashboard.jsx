@@ -14,6 +14,8 @@ export default function Dashboard() {
   const [statusVerdeling, setStatusVerdeling] = useState([]);
   const [teOntvangen, setTeOntvangen] = useState([]);
   const [bijnaVol, setBijnaVol] = useState([]);
+  const [afspraken, setAfspraken] = useState([]);
+  const [zonderAfspraak, setZonderAfspraak] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -22,12 +24,13 @@ export default function Dashboard() {
 
   async function laadAlles() {
     setLoading(true);
-    const [openstaandRes, omzetRes, statusRes, teOntvangenRes, voortgangRes] = await Promise.all([
+    const [openstaandRes, omzetRes, statusRes, teOntvangenRes, voortgangRes, klantenRes] = await Promise.all([
       supabase.from("dashboard_openstaand").select("*").single(),
       supabase.from("dashboard_omzet_per_maand").select("*").limit(12),
       supabase.from("dashboard_status_verdeling").select("*"),
       supabase.from("dashboard_te_ontvangen").select("*"),
       supabase.from("client_voortgang").select("*"),
+      supabase.from("clients").select("id, naam, status, volgende_afspraak").order("volgende_afspraak", { ascending: true }),
     ]);
 
     setOpenstaand(openstaandRes.data);
@@ -35,6 +38,16 @@ export default function Dashboard() {
     setStatusVerdeling(statusRes.data || []);
     setTeOntvangen(teOntvangenRes.data || []);
     setBijnaVol((voortgangRes.data || []).filter((v) => v.uren_resterend <= 5 && v.uren_resterend >= 0));
+
+    const klanten = klantenRes.data || [];
+    const nu = new Date();
+    setAfspraken(
+      klanten
+        .filter((k) => k.volgende_afspraak && new Date(k.volgende_afspraak) >= nu)
+        .slice(0, 8)
+    );
+    setZonderAfspraak(klanten.filter((k) => !k.volgende_afspraak && k.status === "actief"));
+
     setLoading(false);
   }
 
@@ -67,7 +80,7 @@ export default function Dashboard() {
     <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: "32px 20px" }}>
       <div style={{ maxWidth: 1000, margin: "0 auto" }}>
         <header style={{ marginBottom: 24 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0 }}>Dashboard</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>Dashboard</h1>
           <p style={{ color: "#999", marginTop: 4, fontSize: 14 }}>Overzicht van omzet en openstaande zaken</p>
         </header>
 
@@ -95,7 +108,7 @@ export default function Dashboard() {
         </div>
 
         {/* Omzet per maand */}
-        <div style={{ background: "#fff", borderRadius: 16, padding: 24, marginBottom: 20 }}>
+        <div style={{ background: "#fff", borderRadius: 16, padding: 24, marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
           <h3 style={{ margin: "0 0 16px", color: "#111" }}>Omzet per maand (excl. btw)</h3>
           {omzetPerMaand.length === 0 ? (
             <p style={{ color: "#999", fontSize: 14 }}>Nog geen facturen.</p>
@@ -121,9 +134,9 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, marginBottom: 20 }}>
           {/* Status verdeling */}
-          <div style={{ background: "#fff", borderRadius: 16, padding: 24 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
             <h3 style={{ margin: "0 0 16px", color: "#111" }}>Facturen per status</h3>
             {["concept", "verzonden", "betaald"].map((status) => {
               const s = statusMap[status];
@@ -144,7 +157,7 @@ export default function Dashboard() {
           </div>
 
           {/* Klanten bijna door hun uren */}
-          <div style={{ background: "#fff", borderRadius: 16, padding: 24 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
             <h3 style={{ margin: "0 0 16px", color: "#111" }}>Bijna door hun uren</h3>
             {bijnaVol.length === 0 ? (
               <p style={{ color: "#999", fontSize: 14 }}>Geen klanten met minder dan 5 uur over.</p>
@@ -161,8 +174,43 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Geplande afspraken */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, marginBottom: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
+            <h3 style={{ margin: "0 0 16px", color: "#111" }}>Aankomende afspraken</h3>
+            {afspraken.length === 0 ? (
+              <p style={{ color: "#999", fontSize: 14 }}>Geen afspraken gepland.</p>
+            ) : (
+              afspraken.map((a) => (
+                <div key={a.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f0f0f0" }}>
+                  <span style={{ fontSize: 14, color: "#333" }}>{a.naam}</span>
+                  <span style={{ fontSize: 13, color: "#666" }}>
+                    {new Date(a.volgende_afspraak).toLocaleDateString("nl-NL", { day: "numeric", month: "short" })}
+                    {" · "}
+                    {new Date(a.volgende_afspraak).toTimeString().slice(0, 5)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
+            <h3 style={{ margin: "0 0 16px", color: "#111" }}>Actief zonder vervolgafspraak</h3>
+            {zonderAfspraak.length === 0 ? (
+              <p style={{ color: "#999", fontSize: 14 }}>Alle actieve klanten hebben een afspraak gepland.</p>
+            ) : (
+              zonderAfspraak.map((k) => (
+                <div key={k.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f0f0f0" }}>
+                  <span style={{ fontSize: 14, color: "#333" }}>{k.naam}</span>
+                  <span style={{ fontSize: 12, color: "#c0392b", fontWeight: 600 }}>⚠ Niet gepland</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
         {/* Nog te ontvangen (verzonden, onbetaald) */}
-        <div style={{ background: "#fff", borderRadius: 16, padding: 24 }}>
+        <div style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
           <h3 style={{ margin: "0 0 16px", color: "#111" }}>Openstaande facturen (verzonden, nog niet betaald)</h3>
           {teOntvangen.length === 0 ? (
             <p style={{ color: "#999", fontSize: 14 }}>Niets openstaand — mooi zo.</p>
@@ -187,7 +235,7 @@ export default function Dashboard() {
 
 function KpiKaart({ label, waarde, sub, kleur }) {
   return (
-    <div style={{ background: "#fff", borderRadius: 14, padding: 18, borderTop: `3px solid ${kleur}` }}>
+    <div style={{ background: "#fff", borderRadius: 16, padding: 18, borderTop: `3px solid ${kleur}`, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
       <div style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
       <div style={{ fontSize: 22, fontWeight: 700, color: "#111", marginTop: 4 }}>{waarde}</div>
       <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>{sub}</div>
