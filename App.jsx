@@ -56,36 +56,49 @@ function NavBalk() {
   }
 
   const linkStyle = (pad) => ({
-    color: location.pathname === pad ? PINK : "#999",
+    color: location.pathname === pad ? "#fff" : "#888",
     textDecoration: "none",
     fontWeight: 600,
     fontSize: 14,
+    padding: "6px 2px",
+    borderBottom: location.pathname === pad ? `2px solid ${PINK}` : "2px solid transparent",
+    transition: "color 0.15s ease",
   });
 
   return (
     <div
       style={{
         background: "#000",
-        borderBottom: "1px solid #222",
-        padding: "14px 20px",
-        display: "flex",
-        alignItems: "center",
-        gap: 24,
+        borderBottom: "1px solid #1a1a1a",
+        padding: "14px 20px 0 20px",
       }}
     >
-      <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, marginRight: 8 }}>OYMB</span>
-      <Link to="/dashboard" style={linkStyle("/dashboard")}>Dashboard</Link>
-      <Link to="/klanten" style={linkStyle("/klanten")}>Klanten</Link>
-      <Link to="/organisaties" style={linkStyle("/organisaties")}>Organisaties</Link>
-      <Link to="/intake" style={linkStyle("/intake")}>Intake</Link>
-      <Link to="/facturen" style={linkStyle("/facturen")}>Facturen</Link>
-      <div style={{ flex: 1 }} />
-      <button
-        onClick={uitloggen}
-        style={{ background: "none", border: "1px solid #333", color: "#999", borderRadius: 6, padding: "6px 12px", fontSize: 13, cursor: "pointer" }}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <span style={{ color: "#fff", fontWeight: 800, fontSize: 16, letterSpacing: 0.3 }}>OYMB</span>
+        <button
+          onClick={uitloggen}
+          style={{ background: "none", border: "1px solid #2a2a2a", color: "#999", borderRadius: 8, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 500 }}
+        >
+          Uitloggen
+        </button>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 18,
+          overflowX: "auto",
+          whiteSpace: "nowrap",
+          WebkitOverflowScrolling: "touch",
+          paddingBottom: 2,
+        }}
       >
-        Uitloggen
-      </button>
+        <Link to="/dashboard" style={linkStyle("/dashboard")}>Dashboard</Link>
+        <Link to="/klanten" style={linkStyle("/klanten")}>Klanten</Link>
+        <Link to="/organisaties" style={linkStyle("/organisaties")}>Organisaties</Link>
+        <Link to="/intake" style={linkStyle("/intake")}>Intake</Link>
+        <Link to="/facturen" style={linkStyle("/facturen")}>Facturen</Link>
+      </div>
     </div>
   );
 }
