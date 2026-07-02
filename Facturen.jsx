@@ -35,14 +35,14 @@ export default function Facturen() {
     setLoading(true);
     const { data } = await supabase
       .from("invoices")
-      .select("*, clients(naam, adres, dossiernummer)")
+      .select("*, organisaties(naam, adres, contactpersoon)")
       .order("created_at", { ascending: false });
     setInvoices(data || []);
     setLoading(false);
   }
 
   // Verzamelt alle niet-gefactureerde sessies binnen de geselecteerde week,
-  // groepeert per klant en maakt per klant één factuur aan.
+  // groepeert per ORGANISATIE (kan meerdere klanten omvatten) en maakt per organisatie één factuur aan.
   async function genereerWeekfacturen() {
     setGenererenBezig(true);
     const startISO = weergaveWeek.start.toISOString().slice(0, 10);
@@ -67,15 +67,22 @@ export default function Facturen() {
       return;
     }
 
-    // Groeperen per klant
-    const perKlant = {};
+    // Groeperen per organisatie
+    const perOrganisatie = {};
     openstaandeSessies.forEach((s) => {
-      if (!perKlant[s.client_id]) perKlant[s.client_id] = [];
-      perKlant[s.client_id].push(s);
+      const key = s.organisatie_id || "geen-organisatie";
+      if (!perOrganisatie[key]) perOrganisatie[key] = [];
+      perOrganisatie[key].push(s);
     });
 
-    for (const clientId of Object.keys(perKlant)) {
-      const sessies = perKlant[clientId];
+    for (const organisatieId of Object.keys(perOrganisatie)) {
+      if (organisatieId === "geen-organisatie") {
+        alert(
+          "Let op: er zijn sessies van klanten zonder gekoppelde organisatie. Die zijn overgeslagen — koppel eerst een organisatie bij de klant."
+        );
+        continue;
+      }
+      const sessies = perOrganisatie[organisatieId];
       const subtotaal = sessies.reduce((sum, s) => sum + Number(s.subtotaal_excl_btw), 0);
       const btwBedrag = subtotaal * BTW;
       const totaal = subtotaal + btwBedrag;
@@ -88,7 +95,7 @@ export default function Facturen() {
         .from("invoices")
         .insert([
           {
-            client_id: clientId,
+            organisatie_id: organisatieId,
             factuurnummer,
             periode_start: startISO,
             periode_eind: eindISO,
@@ -119,14 +126,142 @@ export default function Facturen() {
   }
 
   async function downloadPDF(invoice) {
-    const { data: klant } = await supabase.from("clients").select("*").eq("id", invoice.client_id).single();
     const { data: sessies } = await supabase
       .from("session_bedragen")
       .select("*")
       .eq("invoice_id", invoice.id)
       .order("datum", { ascending: true });
 
-    genereerFactuurPDF(invoice, klant, sessies || []);
+    genereerFactuurPDF(invoice, invoice.organisaties, sessies || []);
+  }
+
+  async function crediteerFactuur(invoice) {
+    if (invoice.status === "gecrediteerd") {
+      alert("Deze factuur is al gecrediteerd.");
+      return;
+    }
+    if (invoice.credit_van_factuur_id) {
+      alert("Dit is zelf al een creditfactuur, deze kan niet nogmaals gecrediteerd worden.");
+      return;
+    }
+    if (
+      !confirm(
+        `Factuur ${invoice.factuurnummer} crediteren?\n\nEr wordt een creditfactuur aangemaakt en de gekoppelde sessies komen weer beschikbaar om opnieuw te factureren.`
+      )
+    )
+      return;
+
+    const { data: nummerData } = await supabase.rpc("next_invoice_number");
+    const creditNummer = nummerData;
+
+    const { data: creditFactuur, error } = await supabase
+      .from("invoices")
+      .insert([
+        {
+          organisatie_id: invoice.organisatie_id,
+          factuurnummer: creditNummer,
+          periode_start: invoice.periode_start,
+          periode_eind: invoice.periode_eind,
+          subtotaal: -invoice.subtotaal,
+          btw_bedrag: -invoice.btw_bedrag,
+          totaal: -invoice.totaal,
+          status: "concept",
+          credit_van_factuur_id: invoice.id,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      alert("Fout bij aanmaken creditfactuur: " + error.message);
+      return;
+    }
+
+    // Haal de sessies op vóórdat we de koppeling loslaten (nodig voor de PDF)
+    const { data: sessies } = await supabase
+      .from("session_bedragen")
+      .select("*")
+      .eq("invoice_id", invoice.id)
+      .order("datum", { ascending: true });
+
+    // Origineel markeren als gecrediteerd
+    await supabase.from("invoices").update({ status: "gecrediteerd" }).eq("id", invoice.id);
+
+    // Sessies weer vrijgeven zodat ze opnieuw gefactureerd kunnen worden
+    await supabase
+      .from("sessions")
+      .update({ factuur_status: "niet gefactureerd", invoice_id: null })
+      .eq("invoice_id", invoice.id);
+
+    genereerFactuurPDF(
+      { ...creditFactuur, credit_van_factuurnummer: invoice.factuurnummer },
+      invoice.organisaties,
+      sessies || []
+    );
+
+    laadFacturen();
+  }
+
+  async function verstuurNaarEboekhouden(invoice) {
+    if (invoice.eboekhouden_verstuurd) {
+      alert("Deze factuur is al verstuurd naar e-Boekhouden.");
+      return;
+    }
+    if (!confirm(`Factuur ${invoice.factuurnummer} versturen naar e-Boekhouden.nl?`)) return;
+
+    try {
+      const response = await fetch("/api/verstuur-naar-eboekhouden", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceId: invoice.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        alert("Versturen mislukt: " + (result.error || "onbekende fout"));
+        return;
+      }
+      alert("Factuur succesvol verstuurd naar e-Boekhouden.");
+      laadFacturen();
+    } catch (err) {
+      alert("Versturen mislukt: " + err.message);
+    }
+  }
+
+  function exporteerCSV() {
+    const kolommen = [
+      "Factuurnummer",
+      "Organisatie",
+      "Periode start",
+      "Periode eind",
+      "Subtotaal excl. btw",
+      "Btw",
+      "Totaal incl. btw",
+      "Status",
+      "Factuurdatum",
+    ];
+    const rijen = invoices.map((f) => [
+      f.factuurnummer,
+      f.organisaties?.naam || "",
+      f.periode_start,
+      f.periode_eind,
+      Number(f.subtotaal).toFixed(2).replace(".", ","),
+      Number(f.btw_bedrag).toFixed(2).replace(".", ","),
+      Number(f.totaal).toFixed(2).replace(".", ","),
+      f.status,
+      new Date(f.created_at).toLocaleDateString("nl-NL"),
+    ]);
+
+    const csvInhoud = [kolommen, ...rijen]
+      .map((rij) => rij.map((veld) => `"${String(veld).replace(/"/g, '""')}"`).join(";"))
+      .join("\n");
+
+    const blob = new Blob(["\uFEFF" + csvInhoud], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `facturen-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   async function wijzigStatus(invoice, nieuweStatus) {
@@ -177,6 +312,9 @@ export default function Facturen() {
           <button style={primaryBtn} onClick={genereerWeekfacturen} disabled={genererenBezig}>
             {genererenBezig ? "Bezig..." : "Genereer weekfacturen"}
           </button>
+          <button style={secundaireBtn} onClick={exporteerCSV}>
+            Exporteer CSV
+          </button>
         </div>
 
         {loading ? (
@@ -190,7 +328,7 @@ export default function Facturen() {
                 <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 16, color: "#111" }}>
-                      {f.factuurnummer} — {f.clients?.naam}
+                      {f.factuurnummer} — {f.organisaties?.naam || "Onbekende organisatie"}
                     </div>
                     <div style={{ color: "#666", fontSize: 13, marginTop: 2 }}>
                       Periode: {fmtDatum(f.periode_start)} – {fmtDatum(f.periode_eind)}
@@ -199,31 +337,72 @@ export default function Facturen() {
                   <select
                     value={f.status}
                     onChange={(e) => wijzigStatus(f, e.target.value)}
+                    disabled={f.status === "gecrediteerd"}
                     style={{
                       fontSize: 12,
                       padding: "4px 8px",
                       borderRadius: 20,
                       border: "1px solid #ddd",
-                      background: f.status === "betaald" ? "#dcfce7" : f.status === "verzonden" ? "#dbeafe" : "#f3f4f6",
-                      color: f.status === "betaald" ? "#166534" : f.status === "verzonden" ? "#1e40af" : "#666",
+                      background:
+                        f.status === "betaald"
+                          ? "#dcfce7"
+                          : f.status === "verzonden"
+                          ? "#dbeafe"
+                          : f.status === "gecrediteerd"
+                          ? "#fee2e2"
+                          : "#f3f4f6",
+                      color:
+                        f.status === "betaald"
+                          ? "#166534"
+                          : f.status === "verzonden"
+                          ? "#1e40af"
+                          : f.status === "gecrediteerd"
+                          ? "#c0392b"
+                          : "#666",
                       fontWeight: 600,
                     }}
                   >
                     <option value="concept">concept</option>
                     <option value="verzonden">verzonden</option>
                     <option value="betaald">betaald</option>
+                    {f.status === "gecrediteerd" && <option value="gecrediteerd">gecrediteerd</option>}
                   </select>
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+                {f.credit_van_factuur_id && (
+                  <div style={{ fontSize: 12, color: "#c0392b", marginTop: 4 }}>Creditfactuur</div>
+                )}
+                {f.eboekhouden_verstuurd && (
+                  <div style={{ fontSize: 12, color: "#166534", marginTop: 4 }}>✓ Verstuurd naar e-Boekhouden</div>
+                )}
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, flexWrap: "wrap", gap: 10 }}>
                   <div style={{ display: "flex", gap: 18, fontSize: 14, color: "#333", flexWrap: "wrap" }}>
                     <span>Subtotaal: {euro(f.subtotaal)}</span>
                     <span>Btw: {euro(f.btw_bedrag)}</span>
                     <span style={{ fontWeight: 700 }}>Totaal: {euro(f.totaal)}</span>
                   </div>
-                  <button style={{ ...primaryBtn, fontSize: 13, padding: "6px 14px" }} onClick={() => downloadPDF(f)}>
-                    PDF downloaden
-                  </button>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {!f.eboekhouden_verstuurd && f.status !== "gecrediteerd" && (
+                      <button
+                        style={{ ...secundaireBtn, fontSize: 13, padding: "6px 14px" }}
+                        onClick={() => verstuurNaarEboekhouden(f)}
+                      >
+                        Naar e-Boekhouden
+                      </button>
+                    )}
+                    {!f.credit_van_factuur_id && f.status !== "gecrediteerd" && (
+                      <button
+                        style={{ ...secundaireBtn, fontSize: 13, padding: "6px 14px", color: "#c0392b", borderColor: "#c0392b" }}
+                        onClick={() => crediteerFactuur(f)}
+                      >
+                        Crediteren
+                      </button>
+                    )}
+                    <button style={{ ...primaryBtn, fontSize: 13, padding: "6px 14px" }} onClick={() => downloadPDF(f)}>
+                      PDF downloaden
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -239,6 +418,17 @@ const primaryBtn = {
   background: PINK,
   color: "#fff",
   border: "none",
+  borderRadius: 8,
+  padding: "10px 18px",
+  fontWeight: 600,
+  fontSize: 14,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+};
+const secundaireBtn = {
+  background: "#fff",
+  color: "#333",
+  border: "1px solid #ddd",
   borderRadius: 8,
   padding: "10px 18px",
   fontWeight: 600,
