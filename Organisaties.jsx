@@ -26,7 +26,7 @@ export default function Organisaties() {
     <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: "32px 20px" }}>
       <div style={{ maxWidth: 700, margin: "0 auto" }}>
         <header style={{ marginBottom: 24 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0 }}>Organisaties</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>Organisaties</h1>
           <p style={{ color: "#999", marginTop: 4, fontSize: 14 }}>
             Hoofdorganisaties (bijv. Klavertje 4) en hun factuurgegevens
           </p>
@@ -243,7 +243,7 @@ function Field({ label, children }) {
   );
 }
 
-const cardStyle = { background: "#fff", borderRadius: 14, padding: 18, cursor: "pointer" };
+const cardStyle = { background: "#fff", borderRadius: 16, padding: 18, cursor: "pointer", boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)", transition: "box-shadow 0.15s ease, transform 0.15s ease" };
 const inputStyle = {
   width: "100%",
   padding: "10px 12px",
@@ -257,11 +257,13 @@ const primaryBtn = {
   background: PINK,
   color: "#fff",
   border: "none",
-  borderRadius: 8,
-  padding: "10px 18px",
+  borderRadius: 10,
+  padding: "10px 20px",
   fontWeight: 600,
   fontSize: 14,
   cursor: "pointer",
+  boxShadow: "0 2px 6px rgba(249,132,229,0.35)",
+  transition: "transform 0.1s ease, box-shadow 0.15s ease",
 };
 const secundaireBtn = {
   background: "#fff",
