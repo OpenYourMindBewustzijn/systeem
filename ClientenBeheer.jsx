@@ -181,7 +181,7 @@ export default function ClientenBeheer() {
     <div style={{ minHeight: "100vh", background: "#000", color: "#fff", padding: "32px 20px" }}>
       <div style={{ maxWidth: 1000, margin: "0 auto" }}>
         <header style={{ marginBottom: 28 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Klanten</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>Klanten</h1>
           <p style={{ color: "#999", marginTop: 4 }}>Dossiers, sessieverslagen en voortgang</p>
         </header>
 
@@ -476,14 +476,14 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 20 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 16, marginTop: 20 }}>
           <Stat label="Dossiernr." value={client.dossiernummer || "—"} />
           <Stat label="Uren gebruikt" value={urenLabel(voortgang?.uren_gebruikt || 0)} />
           <Stat label="Uren resterend" value={urenLabel(voortgang?.uren_resterend ?? client.pakket_uren_totaal)} />
           <Stat label="Aantal sessies" value={sessions.length} />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginTop: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginTop: 12 }}>
           <Stat label="Totale reistijd" value={`${Math.round(totaalReistijd / 60)} u ${totaalReistijd % 60} min`} />
           <Stat label="Totaal km" value={`${totaalKm.toFixed(1)} km`} />
         </div>
@@ -1286,10 +1286,11 @@ function EmptyState({ onNieuw }) {
 // ---------- Gedeelde stijlen ----------
 const cardStyle = {
   background: "#fff",
-  borderRadius: 14,
+  borderRadius: 16,
   padding: 18,
   cursor: "pointer",
-  transition: "transform 0.15s ease",
+  boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)",
+  transition: "box-shadow 0.15s ease, transform 0.15s ease",
 };
 
 const inputStyle = {
@@ -1306,11 +1307,13 @@ const primaryBtn = {
   background: PINK,
   color: "#fff",
   border: "none",
-  borderRadius: 8,
-  padding: "10px 18px",
+  borderRadius: 10,
+  padding: "10px 20px",
   fontWeight: 600,
   fontSize: 14,
   cursor: "pointer",
+  boxShadow: "0 2px 6px rgba(249,132,229,0.35)",
+  transition: "transform 0.1s ease, box-shadow 0.15s ease",
   whiteSpace: "nowrap",
 };
 
