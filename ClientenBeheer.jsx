@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import { genereerFactuurPDF } from "./factuurPdf";
+import { exporteerDossierNaarWord } from "./dossierExport";
 
 const PINK = "#F984E5";
 const PAARS = "#8b5cf6";
@@ -63,6 +64,76 @@ function IntakeBlok({ client }) {
 }
 
 const STADIA = ["Startfase", "Bewustwording", "Verdieping", "Stabilisatie", "Integratie", "Afronding"];
+
+// Herkenbare labels voor intakevelden (zelfde als op de Intake-pagina)
+const INTAKE_VELD_LABELS = {
+  Naam: "Naam",
+  Email_invuller: "E-mailadres",
+  Datum: "Datum",
+  Hulpvraag: "Hulpvraag",
+  Bijzonderheden: "Bijzonderheden",
+};
+function intakeLabelVoor(veld) {
+  return INTAKE_VELD_LABELS[veld] || veld.replace(/_/g, " ");
+}
+
+function GekoppeldeIntakeBlok({ intake }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ background: "#fff", color: "#111", borderRadius: 16, padding: 24, marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Intake ontvangen</h3>
+          <p style={{ fontSize: 13, color: "#999", margin: "4px 0 0" }}>
+            Ingevuld op{" "}
+            {new Date(intake.created_at).toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}
+          </p>
+        </div>
+        <button style={secundaireBtn} onClick={() => setOpen((o) => !o)}>
+          {open ? "Verbergen" : "Antwoorden bekijken"}
+        </button>
+      </div>
+
+      {open && (
+        <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
+          {Object.entries(intake.antwoorden || {})
+            .filter(([veld]) => !["Naam", "Email_invuller", "_captcha", "_subject", "_template"].includes(veld))
+            .map(([veld, waarde]) => (
+              <div key={veld} style={{ borderTop: "1px solid #f0f0f0", paddingTop: 10 }}>
+                <div style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>
+                  {intakeLabelVoor(veld)}
+                </div>
+                <div style={{ fontSize: 14, color: "#333", whiteSpace: "pre-wrap" }}>
+                  {waarde || <span style={{ color: "#bbb" }}>Niet ingevuld</span>}
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NoShowBlok({ noShows }) {
+  return (
+    <div style={{ background: "#fff", color: "#111", borderRadius: 16, padding: 24, marginBottom: 20, borderLeft: "4px solid #c0392b" }}>
+      <h3 style={{ marginTop: 0, marginBottom: 14 }}>No-shows ({noShows.length})</h3>
+      <div style={{ display: "grid", gap: 10 }}>
+        {noShows.map((n) => (
+          <div key={n.id} style={{ borderTop: "1px solid #f0f0f0", paddingTop: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>
+              {new Date(n.datum_tijd).toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}
+              {" · "}
+              {new Date(n.datum_tijd).toTimeString().slice(0, 5)}
+            </div>
+            {n.no_show_reden && <div style={{ fontSize: 14, color: "#666", marginTop: 2 }}>{n.no_show_reden}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 const STATUSSEN = ["nieuw", "actief", "niet actief", "issue"];
 const statusKleur = (status) => {
   switch (status) {
@@ -354,9 +425,13 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
   const [showNieuweSessie, setShowNieuweSessie] = useState(false);
   const [showBewerken, setShowBewerken] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [intake, setIntake] = useState(null);
+  const [noShows, setNoShows] = useState([]);
 
   useEffect(() => {
     laadSessies();
+    laadIntake();
+    laadNoShows();
   }, [client.id]);
 
   async function laadSessies() {
@@ -368,6 +443,27 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
       .order("datum", { ascending: false });
     setSessions(data || []);
     setLoading(false);
+  }
+
+  async function laadIntake() {
+    const { data } = await supabase
+      .from("intake_antwoorden")
+      .select("*")
+      .eq("client_id", client.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setIntake(data || null);
+  }
+
+  async function laadNoShows() {
+    const { data } = await supabase
+      .from("afspraken")
+      .select("*")
+      .eq("client_id", client.id)
+      .eq("status", "no_show")
+      .order("datum_tijd", { ascending: false });
+    setNoShows(data || []);
   }
 
   const totaalReistijd = sessions.reduce((sum, s) => sum + (s.reistijd_minuten || 0), 0);
@@ -427,6 +523,88 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
     onUpdated();
   }
 
+  async function crediteerSessie(sessie) {
+    if (!sessie.invoice_id) {
+      alert("Deze sessie is niet gekoppeld aan een factuur.");
+      return;
+    }
+
+    // Ophalen om welke factuur het gaat, en hoeveel sessies daarbij horen
+    const { data: factuur, error: factuurError } = await supabase
+      .from("invoices")
+      .select("*, organisaties(*)")
+      .eq("id", sessie.invoice_id)
+      .single();
+
+    if (factuurError || !factuur) {
+      alert("Kon de bijbehorende factuur niet vinden.");
+      return;
+    }
+    if (factuur.status === "gecrediteerd") {
+      alert("Deze factuur is al gecrediteerd.");
+      return;
+    }
+    if (factuur.credit_van_factuur_id) {
+      alert("Dit is zelf al een creditfactuur.");
+      return;
+    }
+
+    const { data: alleSessiesOpFactuur } = await supabase
+      .from("session_bedragen")
+      .select("*")
+      .eq("invoice_id", sessie.invoice_id);
+
+    const aantalOverig = (alleSessiesOpFactuur?.length || 1) - 1;
+    const waarschuwing =
+      aantalOverig > 0
+        ? `Let op: factuur ${factuur.factuurnummer} bevat nog ${aantalOverig} andere sessie(s) (mogelijk van andere klanten). Crediteren gebeurt altijd voor de HELE factuur, niet alleen deze sessie.\n\nWil je toch doorgaan?`
+        : `Factuur ${factuur.factuurnummer} crediteren? De uren van deze sessie komen weer vrij om opnieuw te factureren.`;
+
+    if (!confirm(waarschuwing)) return;
+
+    const { data: nummerData } = await supabase.rpc("next_invoice_number");
+    const creditNummer = nummerData;
+
+    const { data: creditFactuur, error: creditError } = await supabase
+      .from("invoices")
+      .insert([
+        {
+          organisatie_id: factuur.organisatie_id,
+          factuurnummer: creditNummer,
+          periode_start: factuur.periode_start,
+          periode_eind: factuur.periode_eind,
+          subtotaal: -factuur.subtotaal,
+          btw_bedrag: -factuur.btw_bedrag,
+          totaal: -factuur.totaal,
+          status: "concept",
+          credit_van_factuur_id: factuur.id,
+        },
+      ])
+      .select()
+      .single();
+
+    if (creditError) {
+      alert("Fout bij aanmaken creditfactuur: " + creditError.message);
+      return;
+    }
+
+    await supabase.from("invoices").update({ status: "gecrediteerd" }).eq("id", factuur.id);
+
+    await supabase
+      .from("sessions")
+      .update({ factuur_status: "niet gefactureerd", invoice_id: null })
+      .eq("invoice_id", factuur.id);
+
+    genereerFactuurPDF(
+      { ...creditFactuur, credit_van_factuurnummer: factuur.factuurnummer },
+      factuur.organisaties,
+      alleSessiesOpFactuur || []
+    );
+
+    laadSessies();
+    onUpdated();
+  }
+
   return (
     <div>
       <button onClick={onBack} style={backBtn}>
@@ -466,9 +644,17 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
               </p>
             )}
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button style={secundaireBtn} onClick={() => setShowBewerken(true)}>
               Bewerken
+            </button>
+            <button
+              style={secundaireBtn}
+              onClick={() =>
+                exporteerDossierNaarWord(client, client.organisaties, sessions, intake, noShows, voortgang)
+              }
+            >
+              Exporteer dossier (Word)
             </button>
             <button style={primaryBtn} onClick={() => setShowNieuweSessie(true)}>
               + Sessieverslag
@@ -501,6 +687,8 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
 
       <VervolgafspraakBlok client={client} onUpdated={onUpdated} />
       <IntakeBlok client={client} />
+      {intake && <GekoppeldeIntakeBlok intake={intake} />}
+      {noShows.length > 0 && <NoShowBlok noShows={noShows} />}
       <VoortgangBlok client={client} onUpdated={onUpdated} />
 
       <h3 style={{ marginBottom: 12 }}>Sessieverslagen</h3>
@@ -512,7 +700,7 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           {sessions.map((s) => (
-            <SessieKaart key={s.id} sessie={s} onFactureer={directFactureren} />
+            <SessieKaart key={s.id} sessie={s} onFactureer={directFactureren} onCrediteer={crediteerSessie} />
           ))}
         </div>
       )}
@@ -580,6 +768,11 @@ function VervolgafspraakBlok({ client, onUpdated }) {
 
     // 1. Opslaan in het klantdossier (voor de "geen vervolgafspraak"-waarschuwing)
     await supabase.from("clients").update({ volgende_afspraak: startDatumTijd.toISOString() }).eq("id", client.id);
+
+    // 1b. Registreren in de afsprakenhistorie, zodat we later kunnen zien of er een verslag/no-show bij hoort
+    await supabase.from("afspraken").insert([
+      { client_id: client.id, datum_tijd: startDatumTijd.toISOString(), status: "gepland" },
+    ]);
 
     // 2. Google Agenda openen met alles al ingevuld — jij bevestigt zelf met opslaan
     const link = googleAgendaLink({
@@ -734,7 +927,7 @@ function Stat({ label, value }) {
   );
 }
 
-function SessieKaart({ sessie, onFactureer }) {
+function SessieKaart({ sessie, onFactureer, onCrediteer }) {
   const b = berekenBedrag(sessie);
   return (
     <div style={{ ...cardStyle, cursor: "default" }}>
@@ -772,18 +965,26 @@ function SessieKaart({ sessie, onFactureer }) {
           <strong style={{ color: "#111" }}>totaal {euro(b.totaal)}</strong>
         </div>
         {sessie.factuur_status === "gefactureerd" ? (
-          <span
-            style={{
-              fontSize: 12,
-              padding: "4px 10px",
-              borderRadius: 20,
-              background: "#dcfce7",
-              color: "#166534",
-              fontWeight: 600,
-            }}
-          >
-            ✓ Gefactureerd
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                fontSize: 12,
+                padding: "4px 10px",
+                borderRadius: 20,
+                background: "#dcfce7",
+                color: "#166534",
+                fontWeight: 600,
+              }}
+            >
+              ✓ Gefactureerd
+            </span>
+            <button
+              style={{ ...secundaireBtn, fontSize: 12, padding: "5px 12px", color: "#c0392b", borderColor: "#c0392b" }}
+              onClick={() => onCrediteer(sessie)}
+            >
+              Crediteren
+            </button>
+          </div>
         ) : (
           <button style={{ ...primaryBtn, fontSize: 13, padding: "6px 14px" }} onClick={() => onFactureer(sessie)}>
             Direct factureren
