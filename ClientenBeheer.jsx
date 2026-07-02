@@ -6,6 +6,19 @@ const PINK = "#F984E5";
 const PAARS = "#8b5cf6";
 const BTW = 0.21;
 const STADIA = ["Startfase", "Bewustwording", "Verdieping", "Stabilisatie", "Integratie", "Afronding"];
+const STATUSSEN = ["nieuw", "actief", "niet actief", "issue"];
+const statusKleur = (status) => {
+  switch (status) {
+    case "actief":
+      return { bg: PINK, tekst: "#fff" };
+    case "nieuw":
+      return { bg: "#dbeafe", tekst: "#1e40af" };
+    case "issue":
+      return { bg: "#fee2e2", tekst: "#c0392b" };
+    default:
+      return { bg: "#eee", tekst: "#888" };
+  }
+};
 
 function berekenBedrag(sessie) {
   const uren = (sessie.duur_minuten + (sessie.reistijd_minuten || 0)) / 60;
@@ -26,21 +39,29 @@ const urenLabel = (uren) => `${uren.toFixed(1)} uur`;
 // ---------- Hoofdcomponent ----------
 export default function ClientenBeheer() {
   const [clients, setClients] = useState([]);
+  const [organisaties, setOrganisaties] = useState([]);
   const [voortgang, setVoortgang] = useState({});
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("alle");
   const [showNieuweKlant, setShowNieuweKlant] = useState(false);
 
   useEffect(() => {
     laadKlanten();
+    laadOrganisaties();
   }, []);
+
+  async function laadOrganisaties() {
+    const { data } = await supabase.from("organisaties").select("*").order("naam", { ascending: true });
+    setOrganisaties(data || []);
+  }
 
   async function laadKlanten() {
     setLoading(true);
     const { data: clientData, error } = await supabase
       .from("clients")
-      .select("*")
+      .select("*, organisaties(naam)")
       .order("naam", { ascending: true });
 
     const { data: voortgangData } = await supabase.from("client_voortgang").select("*");
@@ -54,11 +75,48 @@ export default function ClientenBeheer() {
     setLoading(false);
   }
 
-  const gefilterd = clients.filter(
-    (c) =>
-      c.naam.toLowerCase().includes(search.toLowerCase()) ||
-      (c.dossiernummer || "").toLowerCase().includes(search.toLowerCase())
-  );
+  const [gefactureerdPerKlant, setGefactureerdPerKlant] = useState({});
+  const [gefactureerdPerOrganisatie, setGefactureerdPerOrganisatie] = useState({});
+
+  useEffect(() => {
+    laadKlanten();
+    laadOrganisaties();
+    laadTotalen();
+  }, []);
+
+  async function laadTotalen() {
+    const { data: klantTotalen } = await supabase.from("client_gefactureerd").select("*");
+    const { data: orgTotalen } = await supabase.from("organisatie_gefactureerd").select("*");
+    const klantMap = {};
+    (klantTotalen || []).forEach((t) => (klantMap[t.client_id] = t));
+    setGefactureerdPerKlant(klantMap);
+    const orgMap = {};
+    (orgTotalen || []).forEach((t) => (orgMap[t.organisatie_id] = t));
+    setGefactureerdPerOrganisatie(orgMap);
+  }
+
+  const gefilterd = clients.filter((c) => {
+    const zoekterm = search.toLowerCase();
+    const matcht =
+      c.naam.toLowerCase().includes(zoekterm) ||
+      (c.dossiernummer || "").toLowerCase().includes(zoekterm) ||
+      (c.plaats || "").toLowerCase().includes(zoekterm);
+    const statusMatcht = statusFilter === "alle" || c.status === statusFilter;
+    return matcht && statusMatcht;
+  });
+
+  // Groeperen per organisatie voor het overzicht
+  const groepenPerOrganisatie = {};
+  gefilterd.forEach((c) => {
+    const key = c.organisatie_id || "geen";
+    if (!groepenPerOrganisatie[key]) {
+      groepenPerOrganisatie[key] = {
+        naam: c.organisaties?.naam || "Geen organisatie gekoppeld",
+        klanten: [],
+      };
+    }
+    groepenPerOrganisatie[key].klanten.push(c);
+  });
 
   const selectedClient = clients.find((c) => c.id === selectedId);
 
@@ -72,16 +130,38 @@ export default function ClientenBeheer() {
 
         {!selectedClient && (
           <>
-            <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+            <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
               <input
-                placeholder="Zoek op naam of dossiernummer..."
+                placeholder="Zoek op naam, plaats of dossiernummer..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                style={inputStyle}
+                style={{ ...inputStyle, flex: 1, minWidth: 200 }}
               />
               <button style={primaryBtn} onClick={() => setShowNieuweKlant(true)}>
                 + Nieuwe klant
               </button>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+              {["alle", ...STATUSSEN].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  style={{
+                    fontSize: 12,
+                    padding: "6px 14px",
+                    borderRadius: 20,
+                    border: "1px solid " + (statusFilter === s ? PINK : "#333"),
+                    background: statusFilter === s ? PINK : "transparent",
+                    color: statusFilter === s ? "#fff" : "#999",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
             </div>
 
             {loading ? (
@@ -89,15 +169,40 @@ export default function ClientenBeheer() {
             ) : gefilterd.length === 0 ? (
               <EmptyState onNieuw={() => setShowNieuweKlant(true)} />
             ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                {gefilterd.map((c) => (
-                  <KlantKaart
-                    key={c.id}
-                    client={c}
-                    voortgang={voortgang[c.id]}
-                    onClick={() => setSelectedId(c.id)}
-                  />
-                ))}
+              <div style={{ display: "grid", gap: 24 }}>
+                {Object.entries(groepenPerOrganisatie).map(([orgId, groep]) => {
+                  const orgTotaal = gefactureerdPerOrganisatie[orgId];
+                  return (
+                    <div key={orgId}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "baseline",
+                          marginBottom: 10,
+                          paddingBottom: 6,
+                          borderBottom: "1px solid #333",
+                        }}
+                      >
+                        <h3 style={{ margin: 0, fontSize: 15, color: "#bbb", fontWeight: 600 }}>{groep.naam}</h3>
+                        <span style={{ fontSize: 13, color: "#8b5cf6", fontWeight: 600 }}>
+                          Totaal gefactureerd: {euro(orgTotaal?.totaal_excl_btw || 0)}
+                        </span>
+                      </div>
+                      <div style={{ display: "grid", gap: 12 }}>
+                        {groep.klanten.map((c) => (
+                          <KlantKaart
+                            key={c.id}
+                            client={c}
+                            voortgang={voortgang[c.id]}
+                            gefactureerd={gefactureerdPerKlant[c.id]}
+                            onClick={() => setSelectedId(c.id)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>
@@ -107,13 +212,19 @@ export default function ClientenBeheer() {
           <KlantDetail
             client={selectedClient}
             voortgang={voortgang[selectedClient.id]}
+            gefactureerd={gefactureerdPerKlant[selectedClient.id]}
+            organisaties={organisaties}
             onBack={() => setSelectedId(null)}
-            onUpdated={laadKlanten}
+            onUpdated={() => {
+              laadKlanten();
+              laadTotalen();
+            }}
           />
         )}
 
         {showNieuweKlant && (
           <NieuweKlantModal
+            organisaties={organisaties}
             onClose={() => setShowNieuweKlant(false)}
             onCreated={() => {
               setShowNieuweKlant(false);
@@ -127,10 +238,12 @@ export default function ClientenBeheer() {
 }
 
 // ---------- Klantkaart in de lijst ----------
-function KlantKaart({ client, voortgang, onClick }) {
+function KlantKaart({ client, voortgang, gefactureerd, onClick }) {
   const resterend = voortgang ? voortgang.uren_resterend : client.pakket_uren_totaal;
   const gebruikt = voortgang ? voortgang.uren_gebruikt : 0;
   const percentage = Math.min(100, (gebruikt / client.pakket_uren_totaal) * 100);
+  const kleur = statusKleur(client.status);
+  const geenAfspraak = !client.volgende_afspraak && client.status === "actief";
 
   return (
     <div onClick={onClick} style={cardStyle}>
@@ -139,20 +252,30 @@ function KlantKaart({ client, voortgang, onClick }) {
           <div style={{ fontWeight: 600, fontSize: 17, color: "#111" }}>{client.naam}</div>
           <div style={{ color: "#666", fontSize: 13, marginTop: 2 }}>
             Dossier {client.dossiernummer || "—"}
+            {client.plaats && ` · ${client.plaats}`}
+          </div>
+          <div style={{ color: "#8b5cf6", fontSize: 12, marginTop: 2, fontWeight: 600 }}>
+            Totaal gefactureerd: {euro(gefactureerd?.totaal_excl_btw || 0)}
           </div>
         </div>
-        <span
-          style={{
-            fontSize: 12,
-            padding: "3px 10px",
-            borderRadius: 20,
-            background: client.status === "actief" ? PINK : "#eee",
-            color: client.status === "actief" ? "#fff" : "#888",
-            fontWeight: 600,
-          }}
-        >
-          {client.status}
-        </span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+          <span
+            style={{
+              fontSize: 12,
+              padding: "3px 10px",
+              borderRadius: 20,
+              background: kleur.bg,
+              color: kleur.tekst,
+              fontWeight: 600,
+              textTransform: "capitalize",
+            }}
+          >
+            {client.status}
+          </span>
+          {geenAfspraak && (
+            <span style={{ fontSize: 11, color: "#c0392b", fontWeight: 600 }}>⚠ Geen vervolgafspraak</span>
+          )}
+        </div>
       </div>
 
       <div style={{ marginTop: 12 }}>
@@ -169,9 +292,10 @@ function KlantKaart({ client, voortgang, onClick }) {
 }
 
 // ---------- Klant detailpagina ----------
-function KlantDetail({ client, voortgang, onBack, onUpdated }) {
+function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, onUpdated }) {
   const [sessions, setSessions] = useState([]);
   const [showNieuweSessie, setShowNieuweSessie] = useState(false);
+  const [showBewerken, setShowBewerken] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -193,6 +317,12 @@ function KlantDetail({ client, voortgang, onBack, onUpdated }) {
   const totaalKm = sessions.reduce((sum, s) => sum + (Number(s.kilometers) || 0), 0);
 
   async function directFactureren(sessie) {
+    if (!client.organisatie_id) {
+      alert(
+        "Deze klant heeft nog geen organisatie gekoppeld. Ga naar de klantgegevens en koppel eerst een organisatie voordat je kunt factureren."
+      );
+      return;
+    }
     if (!confirm(`Factuur maken voor deze sessie van ${formatDatum(sessie.datum)}?`)) return;
 
     const { data: nummerData } = await supabase.rpc("next_invoice_number");
@@ -203,7 +333,7 @@ function KlantDetail({ client, voortgang, onBack, onUpdated }) {
       .from("invoices")
       .insert([
         {
-          client_id: client.id,
+          organisatie_id: client.organisatie_id,
           factuurnummer,
           periode_start: sessie.datum,
           periode_eind: sessie.datum,
@@ -226,7 +356,15 @@ function KlantDetail({ client, voortgang, onBack, onUpdated }) {
       .update({ factuur_status: "gefactureerd", invoice_id: nieuweFactuur.id })
       .eq("id", sessie.id);
 
-    genereerFactuurPDF(nieuweFactuur, client, [{ ...sessie, subtotaal_excl_btw: b.subtotaal }]);
+    const { data: organisatieData } = await supabase
+      .from("organisaties")
+      .select("*")
+      .eq("id", client.organisatie_id)
+      .single();
+
+    genereerFactuurPDF(nieuweFactuur, organisatieData, [
+      { ...sessie, subtotaal_excl_btw: b.subtotaal, client_naam: client.naam },
+    ]);
 
     laadSessies();
     onUpdated();
@@ -241,12 +379,44 @@ function KlantDetail({ client, voortgang, onBack, onUpdated }) {
       <div style={{ background: "#fff", color: "#111", borderRadius: 16, padding: 24, marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 24 }}>{client.naam}</h2>
-            <p style={{ color: "#666", margin: "6px 0 0" }}>{client.adres || "Geen adres bekend"}</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <h2 style={{ margin: 0, fontSize: 24 }}>{client.naam}</h2>
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: "3px 10px",
+                  borderRadius: 20,
+                  textTransform: "capitalize",
+                  fontWeight: 600,
+                  background: statusKleur(client.status).bg,
+                  color: statusKleur(client.status).tekst,
+                }}
+              >
+                {client.status}
+              </span>
+            </div>
+            <p style={{ color: "#666", margin: "6px 0 0" }}>
+              {client.adres || "Geen adres bekend"}
+              {client.plaats ? `, ${client.plaats}` : ""}
+            </p>
+            {client.organisaties?.naam ? (
+              <p style={{ color: "#8b5cf6", margin: "4px 0 0", fontSize: 13, fontWeight: 600 }}>
+                Organisatie: {client.organisaties.naam}
+              </p>
+            ) : (
+              <p style={{ color: "#c0392b", margin: "4px 0 0", fontSize: 13, fontWeight: 600 }}>
+                ⚠ Geen organisatie gekoppeld — factureren nog niet mogelijk
+              </p>
+            )}
           </div>
-          <button style={primaryBtn} onClick={() => setShowNieuweSessie(true)}>
-            + Sessieverslag
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={secundaireBtn} onClick={() => setShowBewerken(true)}>
+              Bewerken
+            </button>
+            <button style={primaryBtn} onClick={() => setShowNieuweSessie(true)}>
+              + Sessieverslag
+            </button>
+          </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 20 }}>
@@ -261,6 +431,10 @@ function KlantDetail({ client, voortgang, onBack, onUpdated }) {
           <Stat label="Totaal km" value={`${totaalKm.toFixed(1)} km`} />
         </div>
 
+        <div style={{ marginTop: 12 }}>
+          <Stat label="Totaal gefactureerd" value={euro(gefactureerd?.totaal_excl_btw || 0)} />
+        </div>
+
         {client.algemene_notities && (
           <div style={{ marginTop: 16, fontSize: 14, color: "#444" }}>
             <strong>Algemene notities:</strong> {client.algemene_notities}
@@ -268,6 +442,7 @@ function KlantDetail({ client, voortgang, onBack, onUpdated }) {
         )}
       </div>
 
+      <VervolgafspraakBlok client={client} onUpdated={onUpdated} />
       <VoortgangBlok client={client} onUpdated={onUpdated} />
 
       <h3 style={{ marginBottom: 12 }}>Sessieverslagen</h3>
@@ -295,6 +470,163 @@ function KlantDetail({ client, voortgang, onBack, onUpdated }) {
           }}
         />
       )}
+
+      {showBewerken && (
+        <BewerkKlantModal
+          client={client}
+          organisaties={organisaties}
+          onClose={() => setShowBewerken(false)}
+          onOpgeslagen={() => {
+            setShowBewerken(false);
+            onUpdated();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------- Vervolgafspraak-blok ----------
+function googleAgendaLink({ titel, beschrijving, locatie, start, eindMinutenLater }) {
+  const eind = new Date(start.getTime() + eindMinutenLater * 60000);
+  const fmt = (d) => d.toISOString().replace(/-|:|\.\d\d\d/g, "");
+  const url = new URL("https://calendar.google.com/calendar/render");
+  url.searchParams.set("action", "TEMPLATE");
+  url.searchParams.set("text", titel);
+  url.searchParams.set("dates", `${fmt(start)}/${fmt(eind)}`);
+  url.searchParams.set("details", beschrijving || "");
+  url.searchParams.set("location", locatie || "");
+  return url.toString();
+}
+
+function VervolgafspraakBlok({ client, onUpdated }) {
+  const huidigeWaarde = client.volgende_afspraak ? new Date(client.volgende_afspraak) : null;
+  const [datum, setDatum] = useState(huidigeWaarde ? huidigeWaarde.toISOString().slice(0, 10) : "");
+  const [tijd, setTijd] = useState(huidigeWaarde ? huidigeWaarde.toTimeString().slice(0, 5) : "10:00");
+  const [duur, setDuur] = useState(75);
+  const [bezig, setBezig] = useState(false);
+  const [mailStatus, setMailStatus] = useState("");
+
+  const geenAfspraak = !client.volgende_afspraak;
+
+  async function afspraakPlannen() {
+    if (!datum) {
+      alert("Kies eerst een datum.");
+      return;
+    }
+    setBezig(true);
+    const startDatumTijd = new Date(`${datum}T${tijd}`);
+
+    // 1. Opslaan in het klantdossier (voor de "geen vervolgafspraak"-waarschuwing)
+    await supabase.from("clients").update({ volgende_afspraak: startDatumTijd.toISOString() }).eq("id", client.id);
+
+    // 2. Google Agenda openen met alles al ingevuld — jij bevestigt zelf met opslaan
+    const link = googleAgendaLink({
+      titel: `Afspraak met ${client.naam}`,
+      beschrijving: `Begeleidingssessie met ${client.naam}${client.dossiernummer ? ` (dossier ${client.dossiernummer})` : ""}`,
+      locatie: client.adres ? `${client.adres}${client.plaats ? ", " + client.plaats : ""}` : "",
+      start: startDatumTijd,
+      eindMinutenLater: duur,
+    });
+    window.open(link, "_blank");
+
+    setBezig(false);
+    onUpdated();
+  }
+
+  async function bevestigingVersturen() {
+    if (!client.email) {
+      alert("Deze klant heeft geen e-mailadres ingevuld.");
+      return;
+    }
+    if (!datum) {
+      alert("Kies eerst een datum voordat je een bevestiging verstuurt.");
+      return;
+    }
+    setMailStatus("bezig");
+    const startDatumTijd = new Date(`${datum}T${tijd}`);
+    try {
+      const response = await fetch("/api/verstuur-afspraakbevestiging", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: client.email,
+          naam: client.naam,
+          datumTijd: startDatumTijd.toISOString(),
+          duurMinuten: duur,
+          locatie: client.adres ? `${client.adres}${client.plaats ? ", " + client.plaats : ""}` : "",
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setMailStatus("fout");
+        alert("Versturen mislukt: " + (result.error || "onbekende fout"));
+        return;
+      }
+      setMailStatus("verstuurd");
+    } catch (err) {
+      setMailStatus("fout");
+      alert("Versturen mislukt: " + err.message);
+    }
+  }
+
+  return (
+    <div style={{ background: "#fff", color: "#111", borderRadius: 16, padding: 24, marginBottom: 20 }}>
+      <h3 style={{ marginTop: 0, marginBottom: 14 }}>Vervolgafspraak</h3>
+      {geenAfspraak && (
+        <div
+          style={{
+            background: "#fee2e2",
+            color: "#c0392b",
+            borderRadius: 8,
+            padding: "8px 12px",
+            fontSize: 13,
+            fontWeight: 600,
+            marginBottom: 12,
+          }}
+        >
+          ⚠ Geen vervolgafspraak gepland
+        </div>
+      )}
+      {!geenAfspraak && (
+        <div style={{ fontSize: 14, color: "#555", marginBottom: 12 }}>
+          Gepland op {huidigeWaarde.toLocaleDateString("nl-NL", { day: "numeric", month: "long" })} om{" "}
+          {huidigeWaarde.toTimeString().slice(0, 5)}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <div>
+          <label style={{ display: "block", fontSize: 13, color: "#555", marginBottom: 4 }}>Datum</label>
+          <input type="date" style={inputStyle} value={datum} onChange={(e) => setDatum(e.target.value)} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 13, color: "#555", marginBottom: 4 }}>Tijd</label>
+          <input type="time" style={inputStyle} value={tijd} onChange={(e) => setTijd(e.target.value)} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 13, color: "#555", marginBottom: 4 }}>Duur (min)</label>
+          <input
+            type="number"
+            style={{ ...inputStyle, width: 90 }}
+            value={duur}
+            onChange={(e) => setDuur(Number(e.target.value))}
+          />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button style={primaryBtn} onClick={afspraakPlannen} disabled={bezig}>
+          {bezig ? "Bezig..." : "Plan in Google Agenda"}
+        </button>
+        <button style={secundaireBtn} onClick={bevestigingVersturen} disabled={mailStatus === "bezig"}>
+          {mailStatus === "bezig"
+            ? "Versturen..."
+            : mailStatus === "verstuurd"
+            ? "✓ Bevestiging verstuurd"
+            : "Verstuur bevestiging per mail"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -438,22 +770,46 @@ function VoortgangBlok({ client, onUpdated }) {
 }
 
 // ---------- Modal: nieuwe klant ----------
-function NieuweKlantModal({ onClose, onCreated }) {
+function NieuweKlantModal({ organisaties, onClose, onCreated }) {
   const [form, setForm] = useState({
     naam: "",
     adres: "",
+    plaats: "",
     dossiernummer: "",
     telefoon: "",
     email: "",
     pakket_uren_totaal: 40,
     algemene_notities: "",
+    organisatie_id: organisaties?.[0]?.id || "",
+    status: "nieuw",
   });
   const [saving, setSaving] = useState(false);
+  const [lokaleOrganisaties, setLokaleOrganisaties] = useState(organisaties || []);
+  const [nieuweOrgNaam, setNieuweOrgNaam] = useState("");
+  const [orgToevoegen, setOrgToevoegen] = useState(false);
+
+  async function organisatieToevoegen() {
+    if (!nieuweOrgNaam.trim()) return;
+    const { data, error } = await supabase
+      .from("organisaties")
+      .insert([{ naam: nieuweOrgNaam.trim() }])
+      .select()
+      .single();
+    if (error) {
+      alert("Kon organisatie niet toevoegen: " + error.message);
+      return;
+    }
+    setLokaleOrganisaties((prev) => [...prev, data]);
+    setForm((f) => ({ ...f, organisatie_id: data.id }));
+    setNieuweOrgNaam("");
+    setOrgToevoegen(false);
+  }
 
   async function opslaan() {
     if (!form.naam) return;
     setSaving(true);
-    const { error } = await supabase.from("clients").insert([form]);
+    const payload = { ...form, organisatie_id: form.organisatie_id || null };
+    const { error } = await supabase.from("clients").insert([payload]);
     setSaving(false);
     if (!error) onCreated();
     else alert("Er ging iets mis: " + error.message);
@@ -464,8 +820,60 @@ function NieuweKlantModal({ onClose, onCreated }) {
       <Field label="Naam *">
         <input style={inputStyle} value={form.naam} onChange={(e) => setForm({ ...form, naam: e.target.value })} />
       </Field>
+      <Field label="Organisatie">
+        {!orgToevoegen ? (
+          <div style={{ display: "flex", gap: 8 }}>
+            <select
+              style={{ ...inputStyle, flex: 1 }}
+              value={form.organisatie_id}
+              onChange={(e) => setForm({ ...form, organisatie_id: e.target.value })}
+            >
+              <option value="">— Geen organisatie —</option>
+              {lokaleOrganisaties.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.naam}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setOrgToevoegen(true)}
+              style={{ ...primaryBtn, padding: "8px 12px", fontSize: 13 }}
+            >
+              + Nieuw
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              style={{ ...inputStyle, flex: 1 }}
+              placeholder="Naam nieuwe organisatie"
+              value={nieuweOrgNaam}
+              onChange={(e) => setNieuweOrgNaam(e.target.value)}
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={organisatieToevoegen}
+              style={{ ...primaryBtn, padding: "8px 12px", fontSize: 13 }}
+            >
+              Toevoegen
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrgToevoegen(false)}
+              style={{ background: "none", border: "1px solid #ddd", borderRadius: 8, padding: "8px 12px", fontSize: 13, cursor: "pointer" }}
+            >
+              Annuleren
+            </button>
+          </div>
+        )}
+      </Field>
       <Field label="Adres">
         <input style={inputStyle} value={form.adres} onChange={(e) => setForm({ ...form, adres: e.target.value })} />
+      </Field>
+      <Field label="Plaats">
+        <input style={inputStyle} value={form.plaats} onChange={(e) => setForm({ ...form, plaats: e.target.value })} />
       </Field>
       <Field label="Dossiernummer">
         <input
@@ -502,6 +910,106 @@ function NieuweKlantModal({ onClose, onCreated }) {
 
       <button style={{ ...primaryBtn, width: "100%", marginTop: 8 }} onClick={opslaan} disabled={saving}>
         {saving ? "Opslaan..." : "Klant toevoegen"}
+      </button>
+    </Modal>
+  );
+}
+
+// ---------- Modal: klant bewerken ----------
+function BewerkKlantModal({ client, organisaties, onClose, onOpgeslagen }) {
+  const [form, setForm] = useState({
+    naam: client.naam || "",
+    adres: client.adres || "",
+    plaats: client.plaats || "",
+    dossiernummer: client.dossiernummer || "",
+    telefoon: client.telefoon || "",
+    email: client.email || "",
+    pakket_uren_totaal: client.pakket_uren_totaal || 40,
+    algemene_notities: client.algemene_notities || "",
+    organisatie_id: client.organisatie_id || "",
+    status: client.status || "nieuw",
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function opslaan() {
+    if (!form.naam) return;
+    setSaving(true);
+    const payload = { ...form, organisatie_id: form.organisatie_id || null };
+    const { error } = await supabase.from("clients").update(payload).eq("id", client.id);
+    setSaving(false);
+    if (!error) onOpgeslagen();
+    else alert("Er ging iets mis: " + error.message);
+  }
+
+  return (
+    <Modal titel="Klant bewerken" onClose={onClose}>
+      <Field label="Naam *">
+        <input style={inputStyle} value={form.naam} onChange={(e) => setForm({ ...form, naam: e.target.value })} />
+      </Field>
+      <Field label="Status">
+        <select style={inputStyle} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+          {STATUSSEN.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Organisatie">
+        <select
+          style={inputStyle}
+          value={form.organisatie_id}
+          onChange={(e) => setForm({ ...form, organisatie_id: e.target.value })}
+        >
+          <option value="">— Geen organisatie —</option>
+          {(organisaties || []).map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.naam}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Adres">
+        <input style={inputStyle} value={form.adres} onChange={(e) => setForm({ ...form, adres: e.target.value })} />
+      </Field>
+      <Field label="Plaats">
+        <input style={inputStyle} value={form.plaats} onChange={(e) => setForm({ ...form, plaats: e.target.value })} />
+      </Field>
+      <Field label="Dossiernummer">
+        <input
+          style={inputStyle}
+          value={form.dossiernummer}
+          onChange={(e) => setForm({ ...form, dossiernummer: e.target.value })}
+        />
+      </Field>
+      <Field label="Telefoon">
+        <input
+          style={inputStyle}
+          value={form.telefoon}
+          onChange={(e) => setForm({ ...form, telefoon: e.target.value })}
+        />
+      </Field>
+      <Field label="E-mail">
+        <input style={inputStyle} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+      </Field>
+      <Field label="Pakket uren totaal">
+        <input
+          type="number"
+          style={inputStyle}
+          value={form.pakket_uren_totaal}
+          onChange={(e) => setForm({ ...form, pakket_uren_totaal: Number(e.target.value) })}
+        />
+      </Field>
+      <Field label="Algemene notities">
+        <textarea
+          style={{ ...inputStyle, minHeight: 80 }}
+          value={form.algemene_notities}
+          onChange={(e) => setForm({ ...form, algemene_notities: e.target.value })}
+        />
+      </Field>
+
+      <button style={{ ...primaryBtn, width: "100%", marginTop: 8 }} onClick={opslaan} disabled={saving}>
+        {saving ? "Opslaan..." : "Wijzigingen opslaan"}
       </button>
     </Modal>
   );
@@ -688,6 +1196,18 @@ const primaryBtn = {
   background: PINK,
   color: "#fff",
   border: "none",
+  borderRadius: 8,
+  padding: "10px 18px",
+  fontWeight: 600,
+  fontSize: 14,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+};
+
+const secundaireBtn = {
+  background: "#fff",
+  color: "#333",
+  border: "1px solid #ddd",
   borderRadius: 8,
   padding: "10px 18px",
   fontWeight: 600,
