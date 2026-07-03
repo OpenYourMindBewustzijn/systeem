@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, Link, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link, useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import Login from "./Login";
 import Dashboard from "./Dashboard";
@@ -50,6 +50,8 @@ export default function App() {
 
 function NavBalk() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [facturenMenuOpen, setFacturenMenuOpen] = useState(false);
 
   async function uitloggen() {
     await supabase.auth.signOut();
@@ -64,6 +66,13 @@ function NavBalk() {
     borderBottom: location.pathname === pad ? `2px solid ${PINK}` : "2px solid transparent",
     transition: "color 0.15s ease",
   });
+
+  const facturenSubmenu = [
+    { label: "Alle facturen", status: null },
+    { label: "Openstaande facturen", status: "verzonden" },
+    { label: "Betaald", status: "betaald" },
+    { label: "Gecrediteerd", status: "gecrediteerd" },
+  ];
 
   return (
     <div
@@ -97,7 +106,64 @@ function NavBalk() {
         <Link to="/klanten" style={linkStyle("/klanten")}>Klanten</Link>
         <Link to="/organisaties" style={linkStyle("/organisaties")}>Organisaties</Link>
         <Link to="/intake" style={linkStyle("/intake")}>Intake</Link>
-        <Link to="/facturen" style={linkStyle("/facturen")}>Facturen</Link>
+
+        <div
+          style={{ position: "relative" }}
+          onMouseEnter={() => setFacturenMenuOpen(true)}
+          onMouseLeave={() => setFacturenMenuOpen(false)}
+        >
+          <button
+            onClick={() => setFacturenMenuOpen((o) => !o)}
+            style={{
+              ...linkStyle("/facturen"),
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              fontFamily: "inherit",
+            }}
+          >
+            Facturen ▾
+          </button>
+          {facturenMenuOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: "100%",
+                left: 0,
+                background: "#fff",
+                borderRadius: 10,
+                boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+                minWidth: 190,
+                zIndex: 50,
+                overflow: "hidden",
+                marginTop: 4,
+              }}
+            >
+              {facturenSubmenu.map((item) => (
+                <div
+                  key={item.label}
+                  onClick={() => {
+                    navigate(item.status ? `/facturen?status=${item.status}` : "/facturen");
+                    setFacturenMenuOpen(false);
+                  }}
+                  style={{
+                    padding: "10px 14px",
+                    fontSize: 13,
+                    color: "#333",
+                    cursor: "pointer",
+                    borderBottom: "1px solid #f0f0f0",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {item.label}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
