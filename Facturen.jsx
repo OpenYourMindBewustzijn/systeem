@@ -25,6 +25,7 @@ function weekRange(datum = new Date()) {
 export default function Facturen() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [invoices, setInvoices] = useState([]);
+  const [klantNamenPerFactuur, setKlantNamenPerFactuur] = useState({});
   const [loading, setLoading] = useState(true);
   const [genererenBezig, setGenererenBezig] = useState(false);
   const [weergaveWeek, setWeergaveWeek] = useState(weekRange());
@@ -41,10 +42,20 @@ export default function Facturen() {
 
   async function laadFacturen() {
     setLoading(true);
-    const { data } = await supabase
-      .from("invoices")
-      .select("*, organisaties(naam, adres, contactpersoon)")
-      .order("created_at", { ascending: false });
+    const [{ data }, { data: regels }] = await Promise.all([
+      supabase
+        .from("invoices")
+        .select("*, organisaties(naam, adres, contactpersoon)")
+        .order("created_at", { ascending: false }),
+      supabase.from("session_bedragen").select("invoice_id, client_naam").not("invoice_id", "is", null),
+    ]);
+    // Unieke klantnamen per factuur verzamelen
+    const namenMap = {};
+    (regels || []).forEach((r) => {
+      if (!namenMap[r.invoice_id]) namenMap[r.invoice_id] = new Set();
+      if (r.client_naam) namenMap[r.invoice_id].add(r.client_naam);
+    });
+    setKlantNamenPerFactuur(Object.fromEntries(Object.entries(namenMap).map(([k, v]) => [k, [...v]])));
     setInvoices(data || []);
     setLoading(false);
   }
@@ -141,10 +152,12 @@ export default function Facturen() {
   }
 
   async function downloadPDF(invoice) {
+    // Bij een creditfactuur horen de regels bij de ORIGINELE factuur
+    const zoekId = invoice.credit_van_factuur_id || invoice.id;
     const { data: sessies } = await supabase
       .from("session_bedragen")
       .select("*")
-      .eq("invoice_id", invoice.id)
+      .eq("invoice_id", zoekId)
       .order("datum", { ascending: true });
 
     genereerFactuurPDF(invoice, invoice.organisaties, sessies || []);
@@ -205,7 +218,7 @@ export default function Facturen() {
     // Sessies markeren als gecrediteerd — uren gaan terug naar het pakket
     await supabase
       .from("sessions")
-      .update({ factuur_status: "gecrediteerd", invoice_id: null })
+      .update({ factuur_status: "gecrediteerd" })
       .eq("invoice_id", invoice.id);
 
     genereerFactuurPDF(
@@ -423,6 +436,12 @@ export default function Facturen() {
                     <div style={{ color: "#666", fontSize: 13, marginTop: 2 }}>
                       Periode: {fmtDatum(f.periode_start)} – {fmtDatum(f.periode_eind)}
                     </div>
+                    {(klantNamenPerFactuur[f.credit_van_factuur_id || f.id] || []).length > 0 && (
+                      <div style={{ color: "#8b5cf6", fontSize: 13, marginTop: 2, fontWeight: 600 }}>
+                        Cliënt{(klantNamenPerFactuur[f.credit_van_factuur_id || f.id] || []).length > 1 ? "en" : ""}:{" "}
+                        {(klantNamenPerFactuur[f.credit_van_factuur_id || f.id] || []).join(", ")}
+                      </div>
+                    )}
                   </div>
                   <select
                     value={f.status}
