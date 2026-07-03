@@ -423,6 +423,7 @@ function KlantKaart({ client, voortgang, gefactureerd, onClick }) {
 function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, onUpdated }) {
   const [sessions, setSessions] = useState([]);
   const [showNieuweSessie, setShowNieuweSessie] = useState(false);
+  const [bewerkSessie, setBewerkSessie] = useState(null);
   const [showBewerken, setShowBewerken] = useState(false);
   const [loading, setLoading] = useState(true);
   const [intake, setIntake] = useState(null);
@@ -558,7 +559,7 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
     const waarschuwing =
       aantalOverig > 0
         ? `Let op: factuur ${factuur.factuurnummer} bevat nog ${aantalOverig} andere sessie(s) (mogelijk van andere klanten). Crediteren gebeurt altijd voor de HELE factuur, niet alleen deze sessie.\n\nWil je toch doorgaan?`
-        : `Factuur ${factuur.factuurnummer} crediteren? De uren van deze sessie komen weer vrij om opnieuw te factureren.`;
+        : `Factuur ${factuur.factuurnummer} crediteren? De uren van deze sessie worden teruggeboekt naar het pakket van de klant.`;
 
     if (!confirm(waarschuwing)) return;
 
@@ -592,7 +593,7 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
 
     await supabase
       .from("sessions")
-      .update({ factuur_status: "niet gefactureerd", invoice_id: null })
+      .update({ factuur_status: "gecrediteerd", invoice_id: null })
       .eq("invoice_id", factuur.id);
 
     genereerFactuurPDF(
@@ -700,7 +701,13 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
       ) : (
         <div style={{ display: "grid", gap: 12 }}>
           {sessions.map((s) => (
-            <SessieKaart key={s.id} sessie={s} onFactureer={directFactureren} onCrediteer={crediteerSessie} />
+            <SessieKaart
+              key={s.id}
+              sessie={s}
+              onFactureer={directFactureren}
+              onCrediteer={crediteerSessie}
+              onBewerk={(sessie) => setBewerkSessie(sessie)}
+            />
           ))}
         </div>
       )}
@@ -724,6 +731,18 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
           onClose={() => setShowBewerken(false)}
           onOpgeslagen={() => {
             setShowBewerken(false);
+            onUpdated();
+          }}
+        />
+      )}
+
+      {bewerkSessie && (
+        <BewerkSessieModal
+          sessie={bewerkSessie}
+          onClose={() => setBewerkSessie(null)}
+          onOpgeslagen={() => {
+            setBewerkSessie(null);
+            laadSessies();
             onUpdated();
           }}
         />
@@ -927,7 +946,7 @@ function Stat({ label, value }) {
   );
 }
 
-function SessieKaart({ sessie, onFactureer, onCrediteer }) {
+function SessieKaart({ sessie, onFactureer, onCrediteer, onBewerk }) {
   const b = berekenBedrag(sessie);
   return (
     <div style={{ ...cardStyle, cursor: "default" }}>
@@ -985,10 +1004,39 @@ function SessieKaart({ sessie, onFactureer, onCrediteer }) {
               Crediteren
             </button>
           </div>
+        ) : sessie.factuur_status === "gecrediteerd" ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                fontSize: 12,
+                padding: "4px 10px",
+                borderRadius: 20,
+                background: "#fee2e2",
+                color: "#c0392b",
+                fontWeight: 600,
+              }}
+            >
+              Gecrediteerd · uren teruggeboekt
+            </span>
+            <button
+              style={{ ...secundaireBtn, fontSize: 12, padding: "5px 12px" }}
+              onClick={() => onBewerk(sessie)}
+            >
+              Bewerken
+            </button>
+          </div>
         ) : (
-          <button style={{ ...primaryBtn, fontSize: 13, padding: "6px 14px" }} onClick={() => onFactureer(sessie)}>
-            Direct factureren
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              style={{ ...secundaireBtn, fontSize: 12, padding: "5px 12px" }}
+              onClick={() => onBewerk(sessie)}
+            >
+              Bewerken
+            </button>
+            <button style={{ ...primaryBtn, fontSize: 13, padding: "6px 14px" }} onClick={() => onFactureer(sessie)}>
+              Direct factureren
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -1070,6 +1118,7 @@ function NieuweKlantModal({ organisaties, onClose, onCreated }) {
     naam: "",
     adres: "",
     plaats: "",
+    geboortedatum: "",
     dossiernummer: "",
     telefoon: "",
     email: "",
@@ -1099,7 +1148,7 @@ function NieuweKlantModal({ organisaties, onClose, onCreated }) {
   async function opslaan() {
     if (!form.naam) return;
     setSaving(true);
-    const payload = { ...form, organisatie_id: form.organisatie_id || null };
+    const payload = { ...form, organisatie_id: form.organisatie_id || null, geboortedatum: form.geboortedatum || null };
     const { error } = await supabase.from("clients").insert([payload]);
     setSaving(false);
     if (!error) onCreated();
@@ -1186,6 +1235,9 @@ function NieuweKlantModal({ organisaties, onClose, onCreated }) {
       <Field label="Plaats">
         <input style={inputStyle} value={form.plaats} onChange={(e) => setForm({ ...form, plaats: e.target.value })} />
       </Field>
+      <Field label="Geboortedatum">
+        <input type="date" style={inputStyle} value={form.geboortedatum} onChange={(e) => setForm({ ...form, geboortedatum: e.target.value })} />
+      </Field>
       <Field label="Dossiernummer">
         <input
           style={inputStyle}
@@ -1232,6 +1284,7 @@ function BewerkKlantModal({ client, organisaties, onClose, onOpgeslagen }) {
     naam: client.naam || "",
     adres: client.adres || "",
     plaats: client.plaats || "",
+    geboortedatum: client.geboortedatum || "",
     dossiernummer: client.dossiernummer || "",
     telefoon: client.telefoon || "",
     email: client.email || "",
@@ -1245,7 +1298,7 @@ function BewerkKlantModal({ client, organisaties, onClose, onOpgeslagen }) {
   async function opslaan() {
     if (!form.naam) return;
     setSaving(true);
-    const payload = { ...form, organisatie_id: form.organisatie_id || null };
+    const payload = { ...form, organisatie_id: form.organisatie_id || null, geboortedatum: form.geboortedatum || null };
     const { error } = await supabase.from("clients").update(payload).eq("id", client.id);
     setSaving(false);
     if (!error) onOpgeslagen();
@@ -1286,6 +1339,9 @@ function BewerkKlantModal({ client, organisaties, onClose, onOpgeslagen }) {
       <Field label="Plaats">
         <input style={inputStyle} value={form.plaats} onChange={(e) => setForm({ ...form, plaats: e.target.value })} />
       </Field>
+      <Field label="Geboortedatum">
+        <input type="date" style={inputStyle} value={form.geboortedatum} onChange={(e) => setForm({ ...form, geboortedatum: e.target.value })} />
+      </Field>
       <Field label="Dossiernummer">
         <input
           style={inputStyle}
@@ -1318,6 +1374,121 @@ function BewerkKlantModal({ client, organisaties, onClose, onOpgeslagen }) {
           onChange={(e) => setForm({ ...form, algemene_notities: e.target.value })}
         />
       </Field>
+
+      <button style={{ ...primaryBtn, width: "100%", marginTop: 8 }} onClick={opslaan} disabled={saving}>
+        {saving ? "Opslaan..." : "Wijzigingen opslaan"}
+      </button>
+    </Modal>
+  );
+}
+
+// ---------- Modal: sessie bewerken ----------
+function BewerkSessieModal({ sessie, onClose, onOpgeslagen }) {
+  const [form, setForm] = useState({
+    datum: sessie.datum || "",
+    duur_minuten: sessie.duur_minuten || 75,
+    reistijd_minuten: sessie.reistijd_minuten || 0,
+    kilometers: sessie.kilometers || 0,
+    verslag: sessie.verslag || "",
+    progressie: sessie.progressie || "",
+  });
+  const [weerFactureerbaar, setWeerFactureerbaar] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const isGefactureerd = sessie.factuur_status === "gefactureerd";
+
+  async function opslaan() {
+    setSaving(true);
+    const payload = {
+      ...form,
+      duur_minuten: Number(form.duur_minuten),
+      reistijd_minuten: Number(form.reistijd_minuten),
+      kilometers: Number(form.kilometers),
+    };
+    if (sessie.factuur_status === "gecrediteerd" && weerFactureerbaar) {
+      payload.factuur_status = "niet gefactureerd";
+    }
+    const { error } = await supabase.from("sessions").update(payload).eq("id", sessie.id);
+    setSaving(false);
+    if (!error) onOpgeslagen();
+    else alert("Er ging iets mis: " + error.message);
+  }
+
+  return (
+    <Modal titel="Sessie bewerken" onClose={onClose}>
+      {isGefactureerd && (
+        <div
+          style={{
+            background: "#fef3c7",
+            color: "#92400e",
+            borderRadius: 8,
+            padding: "8px 12px",
+            fontSize: 13,
+            marginBottom: 14,
+          }}
+        >
+          ⚠ Deze sessie staat al op een factuur. Wijzigingen in uren/km passen de bestaande factuur NIET aan — crediteer
+          eerst als het bedrag moet veranderen.
+        </div>
+      )}
+      <Field label="Datum">
+        <input
+          type="date"
+          style={inputStyle}
+          value={form.datum}
+          onChange={(e) => setForm({ ...form, datum: e.target.value })}
+        />
+      </Field>
+      <Field label="Sessieduur (minuten)">
+        <input
+          type="number"
+          style={inputStyle}
+          value={form.duur_minuten}
+          onChange={(e) => setForm({ ...form, duur_minuten: e.target.value })}
+        />
+      </Field>
+      <Field label="Reistijd (minuten)">
+        <input
+          type="number"
+          style={inputStyle}
+          value={form.reistijd_minuten}
+          onChange={(e) => setForm({ ...form, reistijd_minuten: e.target.value })}
+        />
+      </Field>
+      <Field label="Kilometers">
+        <input
+          type="number"
+          step="0.1"
+          style={inputStyle}
+          value={form.kilometers}
+          onChange={(e) => setForm({ ...form, kilometers: e.target.value })}
+        />
+      </Field>
+      <Field label="Verslag">
+        <textarea
+          style={{ ...inputStyle, minHeight: 80 }}
+          value={form.verslag}
+          onChange={(e) => setForm({ ...form, verslag: e.target.value })}
+        />
+      </Field>
+      <Field label="Progressie">
+        <textarea
+          style={{ ...inputStyle, minHeight: 60 }}
+          value={form.progressie}
+          onChange={(e) => setForm({ ...form, progressie: e.target.value })}
+        />
+      </Field>
+
+      {sessie.factuur_status === "gecrediteerd" && (
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#555", marginBottom: 14, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={weerFactureerbaar}
+            onChange={(e) => setWeerFactureerbaar(e.target.checked)}
+          />
+          Weer factureerbaar maken (uren tellen dan weer mee in het pakket)
+        </label>
+      )}
 
       <button style={{ ...primaryBtn, width: "100%", marginTop: 8 }} onClick={opslaan} disabled={saving}>
         {saving ? "Opslaan..." : "Wijzigingen opslaan"}
