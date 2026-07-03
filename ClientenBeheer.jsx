@@ -593,7 +593,7 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
 
     await supabase
       .from("sessions")
-      .update({ factuur_status: "gecrediteerd", invoice_id: null })
+      .update({ factuur_status: "gecrediteerd" })
       .eq("invoice_id", factuur.id);
 
     genereerFactuurPDF(
@@ -1407,6 +1407,7 @@ function BewerkSessieModal({ sessie, onClose, onOpgeslagen }) {
     };
     if (sessie.factuur_status === "gecrediteerd" && weerFactureerbaar) {
       payload.factuur_status = "niet gefactureerd";
+      payload.invoice_id = null;
     }
     const { error } = await supabase.from("sessions").update(payload).eq("id", sessie.id);
     setSaving(false);
