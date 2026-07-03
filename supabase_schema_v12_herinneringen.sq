@@ -1,0 +1,10 @@
+-- ============================================================
+-- OYMB Klantendatabase — migratie 12: herinneringen + verjaardagen
+-- Voer dit uit NA migratie 11, in de Supabase SQL Editor
+-- ============================================================
+
+-- Geboortedatum van de klant (voor verjaardagsherinneringen)
+alter table clients add column if not exists geboortedatum date;
+
+-- Bijhouden of er al een herinnering is verstuurd voor een afspraak
+alter table afspraken add column if not exists herinnering_verstuurd_op timestamptz;
