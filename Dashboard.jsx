@@ -132,7 +132,7 @@ export default function Dashboard() {
           <KpiKaart
             label="Nog te ontvangen"
             waarde={euro(teOntvangenTotaal)}
-            onClick={() => navigate("/facturen")}
+            onClick={() => navigate("/facturen?status=verzonden")}
             sub={`${teOntvangen.length} verzonden factu${teOntvangen.length === 1 ? "ur" : "ren"}`}
             kleur="#f59e0b"
           />
@@ -317,7 +317,7 @@ export default function Dashboard() {
         </div>
 
         {/* Nog te ontvangen (verzonden, onbetaald) */}
-        <div onClick={() => navigate("/facturen")} style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)", cursor: "pointer" }}>
+        <div onClick={() => navigate("/facturen?status=verzonden")} style={{ background: "#fff", borderRadius: 16, padding: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)", cursor: "pointer" }}>
           <h3 style={{ margin: "0 0 16px", color: "#111" }}>Openstaande facturen (verzonden, nog niet betaald)</h3>
           {teOntvangen.length === 0 ? (
             <p style={{ color: "#999", fontSize: 14 }}>Niets openstaand — mooi zo.</p>
