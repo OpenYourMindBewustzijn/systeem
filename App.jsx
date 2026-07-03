@@ -106,65 +106,54 @@ function NavBalk() {
         <Link to="/klanten" style={linkStyle("/klanten")}>Klanten</Link>
         <Link to="/organisaties" style={linkStyle("/organisaties")}>Organisaties</Link>
         <Link to="/intake" style={linkStyle("/intake")}>Intake</Link>
-
-        <div
-          style={{ position: "relative" }}
-          onMouseEnter={() => setFacturenMenuOpen(true)}
-          onMouseLeave={() => setFacturenMenuOpen(false)}
+        <button
+          onClick={() => setFacturenMenuOpen((o) => !o)}
+          style={{
+            ...linkStyle("/facturen"),
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
         >
-          <button
-            onClick={() => setFacturenMenuOpen((o) => !o)}
-            style={{
-              ...linkStyle("/facturen"),
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              fontFamily: "inherit",
-            }}
-          >
-            Facturen ▾
-          </button>
-          {facturenMenuOpen && (
-            <div
+          Facturen {facturenMenuOpen ? "▴" : "▾"}
+        </button>
+      </div>
+
+      {facturenMenuOpen && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            padding: "10px 0",
+            overflowX: "auto",
+            whiteSpace: "nowrap",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
+          {facturenSubmenu.map((item) => (
+            <button
+              key={item.label}
+              onClick={() => {
+                navigate(item.status ? `/facturen?status=${item.status}` : "/facturen");
+                setFacturenMenuOpen(false);
+              }}
               style={{
-                position: "absolute",
-                top: "100%",
-                left: 0,
-                background: "#fff",
-                borderRadius: 10,
-                boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-                minWidth: 190,
-                zIndex: 50,
-                overflow: "hidden",
-                marginTop: 4,
+                fontSize: 12,
+                padding: "6px 14px",
+                borderRadius: 20,
+                border: "1px solid #333",
+                background: "#111",
+                color: "#ccc",
+                fontWeight: 600,
+                cursor: "pointer",
               }}
             >
-              {facturenSubmenu.map((item) => (
-                <div
-                  key={item.label}
-                  onClick={() => {
-                    navigate(item.status ? `/facturen?status=${item.status}` : "/facturen");
-                    setFacturenMenuOpen(false);
-                  }}
-                  style={{
-                    padding: "10px 14px",
-                    fontSize: 13,
-                    color: "#333",
-                    cursor: "pointer",
-                    borderBottom: "1px solid #f0f0f0",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {item.label}
-                </div>
-              ))}
-            </div>
-          )}
+              {item.label}
+            </button>
+          ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }
