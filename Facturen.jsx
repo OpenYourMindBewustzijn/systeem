@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import { genereerFactuurPDF } from "./factuurPdf";
 
@@ -22,10 +23,17 @@ function weekRange(datum = new Date()) {
 }
 
 export default function Facturen() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [genererenBezig, setGenererenBezig] = useState(false);
   const [weergaveWeek, setWeergaveWeek] = useState(weekRange());
+  const statusFilter = searchParams.get("status") || "alle";
+
+  function setStatusFilter(status) {
+    if (status === "alle") setSearchParams({});
+    else setSearchParams({ status });
+  }
 
   useEffect(() => {
     laadFacturen();
@@ -40,6 +48,13 @@ export default function Facturen() {
     setInvoices(data || []);
     setLoading(false);
   }
+
+  const gefilterdeInvoices = invoices.filter((f) => {
+    if (statusFilter === "alle") return true;
+    if (statusFilter === "gecrediteerd") return Boolean(f.credit_van_factuur_id) || f.status === "gecrediteerd";
+    if (statusFilter === "verzonden") return f.status === "verzonden" && !f.credit_van_factuur_id;
+    return f.status === statusFilter;
+  });
 
   // Verzamelt alle niet-gefactureerde sessies binnen de geselecteerde week,
   // groepeert per ORGANISATIE (kan meerdere klanten omvatten) en maakt per organisatie één factuur aan.
@@ -187,10 +202,10 @@ export default function Facturen() {
     // Origineel markeren als gecrediteerd
     await supabase.from("invoices").update({ status: "gecrediteerd" }).eq("id", invoice.id);
 
-    // Sessies weer vrijgeven zodat ze opnieuw gefactureerd kunnen worden
+    // Sessies markeren als gecrediteerd — uren gaan terug naar het pakket
     await supabase
       .from("sessions")
-      .update({ factuur_status: "niet gefactureerd", invoice_id: null })
+      .update({ factuur_status: "gecrediteerd", invoice_id: null })
       .eq("invoice_id", invoice.id);
 
     genereerFactuurPDF(
@@ -302,14 +317,18 @@ export default function Facturen() {
               waarde={euro(invoices.reduce((s, f) => s + Number(f.totaal), 0))}
               sub={`${invoices.length} facturen`}
               kleur="#8b5cf6"
+              onClick={() => setStatusFilter("alle")}
             />
             <TotaalKaart
               label="Nog te ontvangen"
               waarde={euro(
-                invoices.filter((f) => f.status === "verzonden").reduce((s, f) => s + Number(f.totaal), 0)
+                invoices
+                  .filter((f) => f.status === "verzonden" && !f.credit_van_factuur_id)
+                  .reduce((s, f) => s + Number(f.totaal), 0)
               )}
               sub="status: verzonden"
               kleur="#f59e0b"
+              onClick={() => setStatusFilter("verzonden")}
             />
             <TotaalKaart
               label="Ontvangen"
@@ -318,6 +337,7 @@ export default function Facturen() {
               )}
               sub="status: betaald"
               kleur="#22c55e"
+              onClick={() => setStatusFilter("betaald")}
             />
             <TotaalKaart
               label="Gecrediteerd"
@@ -326,6 +346,7 @@ export default function Facturen() {
               )}
               sub="creditfacturen"
               kleur="#c0392b"
+              onClick={() => setStatusFilter("gecrediteerd")}
             />
           </div>
         )}
@@ -359,13 +380,40 @@ export default function Facturen() {
           </button>
         </div>
 
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          {[
+            { key: "alle", label: "Alle" },
+            { key: "concept", label: "Concept" },
+            { key: "verzonden", label: "Openstaand (verzonden)" },
+            { key: "betaald", label: "Betaald" },
+            { key: "gecrediteerd", label: "Gecrediteerd" },
+          ].map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setStatusFilter(f.key)}
+              style={{
+                fontSize: 12,
+                padding: "6px 14px",
+                borderRadius: 20,
+                border: "1px solid " + (statusFilter === f.key ? PINK : "#333"),
+                background: statusFilter === f.key ? PINK : "transparent",
+                color: statusFilter === f.key ? "#fff" : "#999",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
         {loading ? (
           <p style={{ color: "#999" }}>Laden...</p>
-        ) : invoices.length === 0 ? (
-          <p style={{ color: "#999" }}>Nog geen facturen.</p>
+        ) : gefilterdeInvoices.length === 0 ? (
+          <p style={{ color: "#999" }}>Geen facturen in dit overzicht.</p>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
-            {invoices.map((f) => (
+            {gefilterdeInvoices.map((f) => (
               <div key={f.id} style={cardStyle}>
                 <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                   <div>
@@ -455,9 +503,19 @@ export default function Facturen() {
   );
 }
 
-function TotaalKaart({ label, waarde, sub, kleur }) {
+function TotaalKaart({ label, waarde, sub, kleur, onClick }) {
   return (
-    <div style={{ background: "#fff", borderRadius: 16, padding: 16, borderTop: `3px solid ${kleur}`, boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)" }}>
+    <div
+      onClick={onClick}
+      style={{
+        background: "#fff",
+        borderRadius: 16,
+        padding: 16,
+        borderTop: `3px solid ${kleur}`,
+        boxShadow: "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)",
+        cursor: onClick ? "pointer" : "default",
+      }}
+    >
       <div style={{ fontSize: 11, color: "#999", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
       <div style={{ fontSize: 19, fontWeight: 700, color: "#111", marginTop: 4 }}>{waarde}</div>
       <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>{sub}</div>
