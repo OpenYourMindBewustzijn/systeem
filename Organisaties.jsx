@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
+import { useWerkruimte } from "./WerkruimteContext";
 
 const PINK = "#F984E5";
 
 export default function Organisaties() {
+  const { actief } = useWerkruimte();
   const [organisaties, setOrganisaties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
@@ -15,7 +17,7 @@ export default function Organisaties() {
 
   async function laadOrganisaties() {
     setLoading(true);
-    const { data } = await supabase.from("organisaties").select("*").order("naam", { ascending: true });
+    const { data } = await supabase.from("organisaties").select("*").eq("werkruimte_id", actief.id).order("naam", { ascending: true });
     setOrganisaties(data || []);
     setLoading(false);
   }
@@ -149,6 +151,7 @@ function Veld({ label, waarde }) {
 }
 
 function OrganisatieModal({ organisatie, onClose, onOpgeslagen }) {
+  const { actief } = useWerkruimte();
   const [form, setForm] = useState({
     naam: organisatie?.naam || "",
     adres: organisatie?.adres || "",
@@ -165,7 +168,7 @@ function OrganisatieModal({ organisatie, onClose, onOpgeslagen }) {
     if (organisatie) {
       ({ error } = await supabase.from("organisaties").update(form).eq("id", organisatie.id));
     } else {
-      ({ error } = await supabase.from("organisaties").insert([form]));
+      ({ error } = await supabase.from("organisaties").insert([{ ...form, werkruimte_id: actief.id }]));
     }
     setSaving(false);
     if (!error) onOpgeslagen();

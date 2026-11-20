@@ -2,10 +2,11 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import { genereerFactuurPDF } from "./factuurPdf";
 import { exporteerDossierNaarWord } from "./dossierExport";
+import { useWerkruimte } from "./WerkruimteContext";
+import { haalUitgever, volgendFactuurnummer, btwFactor } from "./facturatie";
 
 const PINK = "#F984E5";
 const PAARS = "#8b5cf6";
-const BTW = 0.21;
 const INTAKE_URL = "https://intakeformulier-gf82.vercel.app/";
 
 function IntakeBlok({ client }) {
@@ -148,12 +149,12 @@ const statusKleur = (status) => {
   }
 };
 
-function berekenBedrag(sessie) {
+function berekenBedrag(sessie, btwPerc = 0.21) {
   const uren = (sessie.duur_minuten + (sessie.reistijd_minuten || 0)) / 60;
-  const arbeid = uren * (sessie.uurtarief || 85);
-  const km = (sessie.kilometers || 0) * (sessie.km_tarief || 0.23);
+  const arbeid = uren * (sessie.uurtarief || 0);
+  const km = (sessie.kilometers || 0) * (sessie.km_tarief || 0);
   const subtotaal = arbeid + km;
-  const btw = subtotaal * BTW;
+  const btw = subtotaal * btwPerc;
   return { arbeid, km, subtotaal, btw, totaal: subtotaal + btw };
 }
 const euro = (n) => (n || 0).toLocaleString("nl-NL", { style: "currency", currency: "EUR" });
@@ -166,6 +167,8 @@ const urenLabel = (uren) => `${uren.toFixed(1)} uur`;
 
 // ---------- Hoofdcomponent ----------
 export default function ClientenBeheer() {
+  const { actief } = useWerkruimte();
+  const wid = actief.id;
   const [clients, setClients] = useState([]);
   const [organisaties, setOrganisaties] = useState([]);
   const [voortgang, setVoortgang] = useState({});
@@ -181,7 +184,7 @@ export default function ClientenBeheer() {
   }, []);
 
   async function laadOrganisaties() {
-    const { data } = await supabase.from("organisaties").select("*").order("naam", { ascending: true });
+    const { data } = await supabase.from("organisaties").select("*").eq("werkruimte_id", wid).order("naam", { ascending: true });
     setOrganisaties(data || []);
   }
 
@@ -190,9 +193,10 @@ export default function ClientenBeheer() {
     const { data: clientData, error } = await supabase
       .from("clients")
       .select("*, organisaties(naam)")
+      .eq("werkruimte_id", wid)
       .order("naam", { ascending: true });
 
-    const { data: voortgangData } = await supabase.from("client_voortgang").select("*");
+    const { data: voortgangData } = await supabase.from("client_voortgang").select("*").eq("werkruimte_id", wid);
 
     if (!error) setClients(clientData || []);
     if (voortgangData) {
@@ -367,6 +371,7 @@ export default function ClientenBeheer() {
 
 // ---------- Klantkaart in de lijst ----------
 function KlantKaart({ client, voortgang, gefactureerd, onClick }) {
+  const { isGedeeld, naamVan } = useWerkruimte();
   const resterend = voortgang ? voortgang.uren_resterend : client.pakket_uren_totaal;
   const gebruikt = voortgang ? voortgang.uren_gebruikt : 0;
   const percentage = Math.min(100, (gebruikt / client.pakket_uren_totaal) * 100);
@@ -385,6 +390,9 @@ function KlantKaart({ client, voortgang, gefactureerd, onClick }) {
           <div style={{ color: "#8b5cf6", fontSize: 12, marginTop: 2, fontWeight: 600 }}>
             Totaal gefactureerd: {euro(gefactureerd?.totaal_excl_btw || 0)}
           </div>
+          {isGedeeld && client.toegewezen_aan && (
+            <div style={{ color: "#999", fontSize: 12, marginTop: 2 }}>Toegewezen aan {naamVan(client.toegewezen_aan)}</div>
+          )}
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
           <span
@@ -479,15 +487,25 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
     }
     if (!confirm(`Factuur maken voor deze sessie van ${formatDatum(sessie.datum)}?`)) return;
 
-    const { data: nummerData } = await supabase.rpc("next_invoice_number");
-    const factuurnummer = nummerData;
-    const b = berekenBedrag(sessie);
+    let uitgever, factuurnummer;
+    try {
+      // Factureren op het KvK van de toegewezen persoon
+      uitgever = await haalUitgever(client.id);
+      factuurnummer = await volgendFactuurnummer(uitgever.werkruimte_id);
+    } catch (e) {
+      alert("Factureren niet mogelijk: " + e.message);
+      return;
+    }
+    const b = berekenBedrag(sessie, btwFactor(uitgever));
 
     const { data: nieuweFactuur, error } = await supabase
       .from("invoices")
       .insert([
         {
           organisatie_id: client.organisatie_id,
+          werkruimte_id: client.werkruimte_id,
+          uitgever,
+          uitgever_werkruimte_id: uitgever.werkruimte_id,
           factuurnummer,
           periode_start: sessie.datum,
           periode_eind: sessie.datum,
@@ -563,14 +581,22 @@ function KlantDetail({ client, voortgang, gefactureerd, organisaties, onBack, on
 
     if (!confirm(waarschuwing)) return;
 
-    const { data: nummerData } = await supabase.rpc("next_invoice_number");
-    const creditNummer = nummerData;
+    let creditNummer;
+    try {
+      creditNummer = await volgendFactuurnummer(factuur.uitgever_werkruimte_id || factuur.werkruimte_id);
+    } catch (e) {
+      alert("Crediteren mislukt: alleen de persoon op wiens naam de factuur staat kan crediteren.\n(" + e.message + ")");
+      return;
+    }
 
     const { data: creditFactuur, error: creditError } = await supabase
       .from("invoices")
       .insert([
         {
           organisatie_id: factuur.organisatie_id,
+          werkruimte_id: factuur.werkruimte_id,
+          uitgever: factuur.uitgever,
+          uitgever_werkruimte_id: factuur.uitgever_werkruimte_id,
           factuurnummer: creditNummer,
           periode_start: factuur.periode_start,
           periode_eind: factuur.periode_eind,
@@ -947,7 +973,8 @@ function Stat({ label, value }) {
 }
 
 function SessieKaart({ sessie, onFactureer, onCrediteer, onBewerk }) {
-  const b = berekenBedrag(sessie);
+  const { actief } = useWerkruimte();
+  const b = berekenBedrag(sessie, Number(actief.btw_percentage) / 100);
   return (
     <div style={{ ...cardStyle, cursor: "default" }}>
       <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -1114,6 +1141,7 @@ function VoortgangBlok({ client, onUpdated }) {
 
 // ---------- Modal: nieuwe klant ----------
 function NieuweKlantModal({ organisaties, onClose, onCreated }) {
+  const { actief, ledenActief, isGedeeld, ikId } = useWerkruimte();
   const [form, setForm] = useState({
     naam: "",
     adres: "",
@@ -1125,6 +1153,7 @@ function NieuweKlantModal({ organisaties, onClose, onCreated }) {
     pakket_uren_totaal: 40,
     algemene_notities: "",
     organisatie_id: organisaties?.[0]?.id || "",
+    toegewezen_aan: ikId,
     status: "nieuw",
   });
   const [saving, setSaving] = useState(false);
@@ -1134,7 +1163,7 @@ function NieuweKlantModal({ organisaties, onClose, onCreated }) {
 
   async function organisatieToevoegen() {
     if (!nieuweOrgForm.naam.trim()) return;
-    const { data, error } = await supabase.from("organisaties").insert([nieuweOrgForm]).select().single();
+    const { data, error } = await supabase.from("organisaties").insert([{ ...nieuweOrgForm, werkruimte_id: actief.id }]).select().single();
     if (error) {
       alert("Kon organisatie niet toevoegen: " + error.message);
       return;
@@ -1148,7 +1177,7 @@ function NieuweKlantModal({ organisaties, onClose, onCreated }) {
   async function opslaan() {
     if (!form.naam) return;
     setSaving(true);
-    const payload = { ...form, organisatie_id: form.organisatie_id || null, geboortedatum: form.geboortedatum || null };
+    const payload = { ...form, werkruimte_id: actief.id, organisatie_id: form.organisatie_id || null, geboortedatum: form.geboortedatum || null };
     const { error } = await supabase.from("clients").insert([payload]);
     setSaving(false);
     if (!error) onCreated();
@@ -1160,6 +1189,17 @@ function NieuweKlantModal({ organisaties, onClose, onCreated }) {
       <Field label="Naam *">
         <input style={inputStyle} value={form.naam} onChange={(e) => setForm({ ...form, naam: e.target.value })} />
       </Field>
+      {isGedeeld && (
+        <Field label="Toegewezen aan (bepaalt op welk KvK gefactureerd wordt)">
+          <select style={inputStyle} value={form.toegewezen_aan || ""} onChange={(e) => setForm({ ...form, toegewezen_aan: e.target.value })}>
+            {ledenActief.map((l) => (
+              <option key={l.user_id} value={l.user_id}>
+                {l.weergavenaam}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Organisatie">
         {!orgToevoegen ? (
           <div style={{ display: "flex", gap: 8 }}>
@@ -1280,6 +1320,7 @@ function NieuweKlantModal({ organisaties, onClose, onCreated }) {
 
 // ---------- Modal: klant bewerken ----------
 function BewerkKlantModal({ client, organisaties, onClose, onOpgeslagen }) {
+  const { ledenActief, isGedeeld } = useWerkruimte();
   const [form, setForm] = useState({
     naam: client.naam || "",
     adres: client.adres || "",
@@ -1291,6 +1332,7 @@ function BewerkKlantModal({ client, organisaties, onClose, onOpgeslagen }) {
     pakket_uren_totaal: client.pakket_uren_totaal || 40,
     algemene_notities: client.algemene_notities || "",
     organisatie_id: client.organisatie_id || "",
+    toegewezen_aan: client.toegewezen_aan || "",
     status: client.status || "nieuw",
   });
   const [saving, setSaving] = useState(false);
@@ -1319,6 +1361,17 @@ function BewerkKlantModal({ client, organisaties, onClose, onOpgeslagen }) {
           ))}
         </select>
       </Field>
+      {isGedeeld && (
+        <Field label="Toegewezen aan (bepaalt op welk KvK gefactureerd wordt)">
+          <select style={inputStyle} value={form.toegewezen_aan || ""} onChange={(e) => setForm({ ...form, toegewezen_aan: e.target.value })}>
+            {ledenActief.map((l) => (
+              <option key={l.user_id} value={l.user_id}>
+                {l.weergavenaam}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Organisatie">
         <select
           style={inputStyle}
@@ -1500,13 +1553,14 @@ function BewerkSessieModal({ sessie, onClose, onOpgeslagen }) {
 
 // ---------- Modal: nieuwe sessie ----------
 function NieuweSessieModal({ clientId, onClose, onCreated }) {
+  const { actief } = useWerkruimte();
   const [form, setForm] = useState({
     datum: new Date().toISOString().slice(0, 10),
     duur_minuten: 75,
     reistijd_minuten: 0,
     kilometers: 0,
-    uurtarief: 85,
-    km_tarief: 0.23,
+    uurtarief: Number(actief.uurtarief),
+    km_tarief: Number(actief.km_tarief),
     verslag: "",
     progressie: "",
   });
@@ -1580,7 +1634,7 @@ function NieuweSessieModal({ clientId, onClose, onCreated }) {
         </div>
       </div>
       <div style={{ fontSize: 13, color: "#666", marginBottom: 14, background: "#f9f9f9", padding: "8px 12px", borderRadius: 8 }}>
-        Geschat bedrag: <strong>{euro(berekenBedrag(form).totaal)}</strong> incl. btw
+        Geschat bedrag: <strong>{euro(berekenBedrag(form, Number(actief.btw_percentage) / 100).totaal)}</strong> incl. btw
       </div>
       <Field label="Verslag van de sessie">
         <textarea

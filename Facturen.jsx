@@ -2,9 +2,10 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import { genereerFactuurPDF } from "./factuurPdf";
+import { useWerkruimte } from "./WerkruimteContext";
+import { haalUitgever, volgendFactuurnummer, btwFactor } from "./facturatie";
 
 const PINK = "#F984E5";
-const BTW = 0.21;
 
 const euro = (n) => (n || 0).toLocaleString("nl-NL", { style: "currency", currency: "EUR" });
 const fmtDatum = (d) => new Date(d).toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" });
@@ -23,6 +24,8 @@ function weekRange(datum = new Date()) {
 }
 
 export default function Facturen() {
+  const { actief, naamVan } = useWerkruimte();
+  const wid = actief.id;
   const [searchParams, setSearchParams] = useSearchParams();
   const [invoices, setInvoices] = useState([]);
   const [klantNamenPerFactuur, setKlantNamenPerFactuur] = useState({});
@@ -46,8 +49,9 @@ export default function Facturen() {
       supabase
         .from("invoices")
         .select("*, organisaties(naam, adres, contactpersoon)")
+        .eq("werkruimte_id", wid)
         .order("created_at", { ascending: false }),
-      supabase.from("session_bedragen").select("invoice_id, client_naam").not("invoice_id", "is", null),
+      supabase.from("session_bedragen").select("invoice_id, client_naam").eq("werkruimte_id", wid).not("invoice_id", "is", null),
     ]);
     // Unieke klantnamen per factuur verzamelen
     const namenMap = {};
@@ -77,6 +81,7 @@ export default function Facturen() {
     const { data: openstaandeSessies, error } = await supabase
       .from("session_bedragen")
       .select("*")
+      .eq("werkruimte_id", wid)
       .eq("factuur_status", "niet gefactureerd")
       .gte("datum", startISO)
       .lte("datum", eindISO);
@@ -93,35 +98,46 @@ export default function Facturen() {
       return;
     }
 
-    // Groeperen per organisatie
+    // Groeperen per organisatie én per toegewezen persoon: elke persoon factureert op zijn eigen KvK
     const perOrganisatie = {};
     openstaandeSessies.forEach((s) => {
-      const key = s.organisatie_id || "geen-organisatie";
+      const key = s.organisatie_id ? `${s.organisatie_id}|${s.toegewezen_aan || ""}` : "geen-organisatie";
       if (!perOrganisatie[key]) perOrganisatie[key] = [];
       perOrganisatie[key].push(s);
     });
 
-    for (const organisatieId of Object.keys(perOrganisatie)) {
-      if (organisatieId === "geen-organisatie") {
+    for (const groepKey of Object.keys(perOrganisatie)) {
+      const organisatieId = groepKey.split("|")[0];
+      if (groepKey === "geen-organisatie") {
         alert(
           "Let op: er zijn sessies van klanten zonder gekoppelde organisatie. Die zijn overgeslagen — koppel eerst een organisatie bij de klant."
         );
         continue;
       }
-      const sessies = perOrganisatie[organisatieId];
-      const subtotaal = sessies.reduce((sum, s) => sum + Number(s.subtotaal_excl_btw), 0);
-      const btwBedrag = subtotaal * BTW;
-      const totaal = subtotaal + btwBedrag;
+      const sessies = perOrganisatie[groepKey];
 
-      // Volgend factuurnummer ophalen via database-functie
-      const { data: nummerData } = await supabase.rpc("next_invoice_number");
-      const factuurnummer = nummerData;
+      // Gegevens van de uitgever (op basis van de toegewezen persoon) en volgend factuurnummer
+      let uitgever, factuurnummer;
+      try {
+        uitgever = await haalUitgever(sessies[0].client_id);
+        factuurnummer = await volgendFactuurnummer(uitgever.werkruimte_id);
+      } catch (e) {
+        const wie = naamVan(sessies[0].toegewezen_aan) || "de toegewezen persoon";
+        alert(`Overgeslagen: klanten van ${wie}. Alleen ${wie} kan hiervoor factureren.\n(${e.message})`);
+        continue;
+      }
+      const subtotaal = sessies.reduce((sum, s) => sum + Number(s.subtotaal_excl_btw), 0);
+      const btwBedrag = subtotaal * btwFactor(uitgever);
+      const totaal = subtotaal + btwBedrag;
 
       const { data: nieuweFactuur, error: insertError } = await supabase
         .from("invoices")
         .insert([
           {
             organisatie_id: organisatieId,
+            werkruimte_id: wid,
+            uitgever,
+            uitgever_werkruimte_id: uitgever.werkruimte_id,
             factuurnummer,
             periode_start: startISO,
             periode_eind: eindISO,
@@ -179,14 +195,24 @@ export default function Facturen() {
     )
       return;
 
-    const { data: nummerData } = await supabase.rpc("next_invoice_number");
-    const creditNummer = nummerData;
+    let creditNummer;
+    try {
+      // Creditnota komt in dezelfde nummerreeks en op dezelfde bedrijfsgegevens als de originele factuur
+      const uitgeverId = invoice.uitgever_werkruimte_id || invoice.werkruimte_id;
+      creditNummer = await volgendFactuurnummer(uitgeverId);
+    } catch (e) {
+      alert("Crediteren mislukt: alleen de persoon op wiens naam de factuur staat kan crediteren.\n(" + e.message + ")");
+      return;
+    }
 
     const { data: creditFactuur, error } = await supabase
       .from("invoices")
       .insert([
         {
           organisatie_id: invoice.organisatie_id,
+          werkruimte_id: invoice.werkruimte_id,
+          uitgever: invoice.uitgever,
+          uitgever_werkruimte_id: invoice.uitgever_werkruimte_id,
           factuurnummer: creditNummer,
           periode_start: invoice.periode_start,
           periode_eind: invoice.periode_eind,
@@ -238,9 +264,10 @@ export default function Facturen() {
     if (!confirm(`Factuur ${invoice.factuurnummer} versturen naar e-Boekhouden.nl?`)) return;
 
     try {
+      const { data: sessieData } = await supabase.auth.getSession();
       const response = await fetch("/api/verstuur-naar-eboekhouden", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessieData.session?.access_token}` },
         body: JSON.stringify({ invoiceId: invoice.id }),
       });
       const result = await response.json();
@@ -433,6 +460,11 @@ export default function Facturen() {
                     <div style={{ fontWeight: 600, fontSize: 16, color: "#111" }}>
                       {f.factuurnummer} — {f.organisaties?.naam || "Onbekende organisatie"}
                     </div>
+                    {f.uitgever?.bedrijfsnaam && (
+                      <div style={{ color: "#666", fontSize: 12, marginTop: 2 }}>
+                        Op naam van: {f.uitgever.bedrijfsnaam}{f.owner_id && naamVan(f.owner_id) ? ` · gemaakt door ${naamVan(f.owner_id)}` : ""}
+                      </div>
+                    )}
                     <div style={{ color: "#666", fontSize: 13, marginTop: 2 }}>
                       Periode: {fmtDatum(f.periode_start)} – {fmtDatum(f.periode_eind)}
                     </div>
@@ -492,7 +524,7 @@ export default function Facturen() {
                     <span style={{ fontWeight: 700 }}>Totaal: {euro(f.totaal)}</span>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {!f.eboekhouden_verstuurd && f.status !== "gecrediteerd" && (
+                    {!f.eboekhouden_verstuurd && f.status !== "gecrediteerd" && f.uitgever?.eboekhouden_actief && (
                       <button
                         style={{ ...secundaireBtn, fontSize: 13, padding: "6px 14px" }}
                         onClick={() => verstuurNaarEboekhouden(f)}

@@ -7,6 +7,8 @@ import ClientenBeheer from "./ClientenBeheer";
 import Facturen from "./Facturen";
 import Organisaties from "./Organisaties";
 import Intake from "./Intake";
+import Instellingen from "./Instellingen";
+import { WerkruimteProvider, useWerkruimte } from "./WerkruimteContext";
 
 const PINK = "#F984E5";
 
@@ -35,7 +37,9 @@ export default function App() {
 
   return (
     <BrowserRouter>
+     <WerkruimteProvider>
       <NavBalk />
+      <WerkruimteGate>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/dashboard" element={<Dashboard />} />
@@ -43,12 +47,30 @@ export default function App() {
         <Route path="/organisaties" element={<Organisaties />} />
         <Route path="/intake" element={<Intake />} />
         <Route path="/facturen" element={<Facturen />} />
+        <Route path="/instellingen" element={<Instellingen />} />
       </Routes>
+      </WerkruimteGate>
+     </WerkruimteProvider>
     </BrowserRouter>
   );
 }
 
+// Wacht tot de administraties geladen zijn; toont een duidelijke melding als je nog geen toegang hebt.
+function WerkruimteGate({ children }) {
+  const { klaar, actief } = useWerkruimte();
+  if (!klaar) return <div style={{ color: "#999", padding: 40 }}>Laden...</div>;
+  if (!actief)
+    return (
+      <div style={{ color: "#fff", padding: 40, maxWidth: 520 }}>
+        Je account is nog niet gekoppeld aan een administratie. Vraag Wendy om je toe te voegen.
+      </div>
+    );
+  // key = opnieuw laden van alle pagina's zodra je van administratie wisselt
+  return <React.Fragment key={actief.id}>{children}</React.Fragment>;
+}
+
 function NavBalk() {
+  const { werkruimtes, actief, kiesWerkruimte } = useWerkruimte();
   const location = useLocation();
   const navigate = useNavigate();
   const [facturenMenuOpen, setFacturenMenuOpen] = useState(false);
@@ -83,7 +105,19 @@ function NavBalk() {
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <span style={{ color: "#fff", fontWeight: 800, fontSize: 16, letterSpacing: 0.3 }}>OYMB</span>
+        {werkruimtes.length > 1 ? (
+          <select
+            value={actief?.id || ""}
+            onChange={(e) => { kiesWerkruimte(e.target.value); navigate("/dashboard"); }}
+            style={{ background: "#111", color: "#fff", border: `1px solid ${PINK}`, borderRadius: 8, padding: "6px 10px", fontWeight: 800, fontSize: 14 }}
+          >
+            {werkruimtes.map((w) => (
+              <option key={w.id} value={w.id}>{w.naam}</option>
+            ))}
+          </select>
+        ) : (
+          <span style={{ color: "#fff", fontWeight: 800, fontSize: 16, letterSpacing: 0.3 }}>{actief?.naam || "OYMB"}</span>
+        )}
         <button
           onClick={uitloggen}
           style={{ background: "none", border: "1px solid #2a2a2a", color: "#999", borderRadius: 8, padding: "6px 14px", fontSize: 13, cursor: "pointer", fontWeight: 500 }}
@@ -118,6 +152,7 @@ function NavBalk() {
         >
           Facturen {facturenMenuOpen ? "▴" : "▾"}
         </button>
+        <Link to="/instellingen" style={linkStyle("/instellingen")}>Instellingen</Link>
       </div>
 
       {facturenMenuOpen && (

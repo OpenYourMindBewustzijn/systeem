@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { useWerkruimte } from "./WerkruimteContext";
 
 const PINK = "#F984E5";
 const PAARS = "#8b5cf6";
@@ -11,6 +12,8 @@ const fmtDatum = (d) => new Date(d).toLocaleDateString("nl-NL", { day: "numeric"
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { actief } = useWerkruimte();
+  const wid = actief.id;
   const [openstaand, setOpenstaand] = useState(null);
   const [omzetPerMaand, setOmzetPerMaand] = useState([]);
   const [statusVerdeling, setStatusVerdeling] = useState([]);
@@ -29,12 +32,12 @@ export default function Dashboard() {
   async function laadAlles() {
     setLoading(true);
     const [openstaandRes, omzetRes, statusRes, teOntvangenRes, voortgangRes, klantenRes, zonderVerslagRes] = await Promise.all([
-      supabase.from("dashboard_openstaand").select("*").single(),
-      supabase.from("dashboard_omzet_per_maand").select("*").limit(12),
-      supabase.from("dashboard_status_verdeling").select("*"),
-      supabase.from("dashboard_te_ontvangen").select("*"),
-      supabase.from("client_voortgang").select("*"),
-      supabase.from("clients").select("id, naam, status, volgende_afspraak").order("volgende_afspraak", { ascending: true }),
+      supabase.from("ws_openstaand").select("*").eq("werkruimte_id", wid).maybeSingle(),
+      supabase.from("ws_omzet_per_maand").select("*").eq("werkruimte_id", wid).limit(12),
+      supabase.from("ws_status_verdeling").select("*").eq("werkruimte_id", wid),
+      supabase.from("ws_te_ontvangen").select("*").eq("werkruimte_id", wid),
+      supabase.from("client_voortgang").select("*").eq("werkruimte_id", wid),
+      supabase.from("clients").select("id, naam, status, volgende_afspraak").eq("werkruimte_id", wid).order("volgende_afspraak", { ascending: true }),
       supabase.from("dashboard_afspraken_zonder_verslag").select("*"),
     ]);
 

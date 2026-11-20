@@ -34,6 +34,13 @@ export default async function handler(req, res) {
 
   const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
+  // 0. Wie vraagt dit? Alleen ingelogde gebruikers, en alleen voor facturen van hun eigen administratie.
+  const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  if (!token) return res.status(401).json({ error: "Niet ingelogd" });
+  const { data: gebruikerData, error: gebruikerFout } = await supabaseAdmin.auth.getUser(token);
+  const gebruiker = gebruikerData?.user;
+  if (gebruikerFout || !gebruiker) return res.status(401).json({ error: "Niet ingelogd" });
+
   try {
     // 1. Factuur + organisatie + sessieregels ophalen
     const { data: factuur, error: factuurError } = await supabaseAdmin
@@ -44,6 +51,24 @@ export default async function handler(req, res) {
 
     if (factuurError || !factuur) {
       return res.status(404).json({ error: "Factuur niet gevonden: " + (factuurError?.message || "") });
+    }
+
+    // Alleen leden van de administratie waarop de factuur staat, en alleen als e-Boekhouden daar aan staat
+    const uitgeverWerkruimte = factuur.uitgever_werkruimte_id || factuur.werkruimte_id;
+    const { data: lid } = await supabaseAdmin
+      .from("werkruimte_leden")
+      .select("user_id")
+      .eq("werkruimte_id", uitgeverWerkruimte)
+      .eq("user_id", gebruiker.id)
+      .maybeSingle();
+    if (!lid) return res.status(403).json({ error: "Je hebt geen toegang tot deze factuur." });
+    const { data: ruimte } = await supabaseAdmin
+      .from("werkruimtes")
+      .select("eboekhouden_actief")
+      .eq("id", uitgeverWerkruimte)
+      .single();
+    if (!ruimte?.eboekhouden_actief) {
+      return res.status(403).json({ error: "e-Boekhouden is niet gekoppeld voor deze administratie." });
     }
 
     if (factuur.eboekhouden_verstuurd) {

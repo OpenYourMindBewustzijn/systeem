@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
+import { useWerkruimte } from "./WerkruimteContext";
 
 const PINK = "#F984E5";
 
@@ -18,6 +19,7 @@ function labelVoor(veld) {
 }
 
 export default function Intake() {
+  const { actief } = useWerkruimte();
   const [intakes, setIntakes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
@@ -33,13 +35,14 @@ export default function Intake() {
     const { data } = await supabase
       .from("intake_antwoorden")
       .select("*")
+      .eq("werkruimte_id", actief.id)
       .order("created_at", { ascending: false });
     setIntakes(data || []);
     setLoading(false);
   }
 
   async function laadClients() {
-    const { data } = await supabase.from("clients").select("id, naam").order("naam", { ascending: true });
+    const { data } = await supabase.from("clients").select("id, naam").eq("werkruimte_id", actief.id).order("naam", { ascending: true });
     setClients(data || []);
   }
 

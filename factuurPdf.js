@@ -2,15 +2,22 @@
 // Genereert een PDF-factuur in de browser. Vereist: npm install jspdf
 import { jsPDF } from "jspdf";
 
-const BEDRIJF = {
-  naam: "Open Your Mind Bewustzijn",
-  adres: "Pinksterbloem 19, 2631 SC Nootdorp",
-  email: "info@oymb.nl",
-  website: "www.oymb.nl",
-  kvk: "72648988",
-  btwnummer: "NL002180692B49",
-  iban: "NL09KNAB0257785973",
-};
+// Gegevens van de uitgever komen uit de factuur zelf (factuur.uitgever), zodat elke administratie
+// op zijn eigen naam, KvK, BTW-nummer en IBAN factureert.
+function bedrijfVan(factuur) {
+  const u = factuur.uitgever || {};
+  return {
+    naam: u.bedrijfsnaam || "",
+    adres: u.adres || "",
+    email: u.email || "",
+    website: u.website || "",
+    kvk: u.kvk || "",
+    btwnummer: u.btw_nummer || "",
+    iban: u.iban || "",
+    btwPercentage: Number(u.btw_percentage ?? 21),
+    termijn: Number(u.betaaltermijn_dagen ?? 14),
+  };
+}
 
 const euro = (n) => (n || 0).toLocaleString("nl-NL", { style: "currency", currency: "EUR" });
 const fmtDatum = (d) => new Date(d).toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" });
@@ -21,6 +28,7 @@ const fmtDatum = (d) => new Date(d).toLocaleDateString("nl-NL", { day: "numeric"
  * @param {array} sessies - array van session_bedragen rijen die in deze factuur zitten (kunnen meerdere klanten bevatten)
  */
 export function genereerFactuurPDF(factuur, organisatie, sessies) {
+  const BEDRIJF = bedrijfVan(factuur);
   const isCredit = Boolean(factuur.credit_van_factuurnummer);
   const doc = new jsPDF();
   const marge = 20;
@@ -34,7 +42,7 @@ export function genereerFactuurPDF(factuur, organisatie, sessies) {
   doc.setFontSize(10);
   doc.setTextColor(120, 120, 120);
   y += 7;
-  doc.text(`${BEDRIJF.adres} · ${BEDRIJF.email} · ${BEDRIJF.website}`, marge, y);
+  doc.text([BEDRIJF.adres, BEDRIJF.email, BEDRIJF.website].filter(Boolean).join(" · "), marge, y);
 
   // Factuurtitel + nummer rechtsboven
   doc.setFontSize(16);
@@ -104,8 +112,8 @@ export function genereerFactuurPDF(factuur, organisatie, sessies) {
   sessies.forEach((s) => {
     const sessieUren = s.duur_minuten / 60;
     const reisUren = (s.reistijd_minuten || 0) / 60;
-    const uurtarief = s.uurtarief || 85;
-    const kmTarief = s.km_tarief || 0.23;
+    const uurtarief = s.uurtarief || 0;
+    const kmTarief = s.km_tarief || 0;
 
     const regels = [
       {
@@ -157,7 +165,7 @@ export function genereerFactuurPDF(factuur, organisatie, sessies) {
   doc.text("Subtotaal (excl. btw):", 120, y);
   doc.text(euro(factuur.subtotaal), 187, y, { align: "right" });
   y += 7;
-  doc.text("Btw (21%):", 120, y);
+  doc.text(`Btw (${BEDRIJF.btwPercentage}%):`, 120, y);
   doc.text(euro(factuur.btw_bedrag), 187, y, { align: "right" });
   y += 9;
 
@@ -186,7 +194,7 @@ export function genereerFactuurPDF(factuur, organisatie, sessies) {
   doc.text(
     isCredit
       ? "Dit bedrag wordt verrekend met de openstaande factuur."
-      : "Gelieve binnen 14 dagen te betalen onder vermelding van het factuurnummer.",
+      : `Gelieve binnen ${BEDRIJF.termijn} dagen te betalen onder vermelding van het factuurnummer.`,
     marge,
     y + 5
   );

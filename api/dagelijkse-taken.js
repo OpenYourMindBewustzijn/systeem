@@ -13,6 +13,10 @@
 import { createClient } from "@supabase/supabase-js";
 
 export default async function handler(req, res) {
+  // Vercel stuurt bij cron-aanroepen automatisch "Authorization: Bearer <CRON_SECRET>" mee als die variabele is ingesteld
+  if (process.env.CRON_SECRET && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: "Niet toegestaan" });
+  }
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
   const vanAdres = process.env.AFSPRAAK_VAN_EMAIL || "OYMB Bewustzijn <onboarding@resend.dev>";
   const resultaat = { herinneringen: 0, verjaardagen: 0, fouten: [] };
@@ -36,7 +40,7 @@ export default async function handler(req, res) {
 
     const { data: afspraken } = await supabase
       .from("afspraken")
-      .select("id, datum_tijd, clients(naam, email)")
+      .select("id, datum_tijd, clients(naam, email, werkruimte_id, toegewezen_aan, werkruimtes(bedrijfsnaam, adres))")
       .eq("status", "gepland")
       .is("herinnering_verstuurd_op", null)
       .gte("datum_tijd", nu.toISOString())
@@ -45,6 +49,8 @@ export default async function handler(req, res) {
     for (const a of afspraken || []) {
       const klant = a.clients;
       if (!klant?.email) continue;
+      const bedrijf = klant.werkruimtes?.bedrijfsnaam || "ons";
+      const adres = klant.werkruimtes?.adres || "";
 
       const start = new Date(a.datum_tijd);
       const datumLabel = start.toLocaleDateString("nl-NL", {
@@ -63,11 +69,11 @@ export default async function handler(req, res) {
         <div style="font-family: system-ui, sans-serif; color: #111; max-width: 480px; margin: 0 auto;">
           <h2 style="color: #F984E5;">Herinnering aan je afspraak</h2>
           <p>Beste ${klant.naam},</p>
-          <p>Een vriendelijke herinnering: je afspraak bij Open Your Mind Bewustzijn staat gepland op:</p>
+          <p>Een vriendelijke herinnering: je afspraak bij ${bedrijf} staat gepland op:</p>
           <p style="font-size: 18px; font-weight: 600;">${datumLabel} om ${tijdLabel} uur</p>
           <p>Mocht je onverhoopt verhinderd zijn, laat het dan tijdig even weten.</p>
           <p>Tot dan!</p>
-          <p style="color: #999; font-size: 13px; margin-top: 24px;">Open Your Mind Bewustzijn · Pinksterbloem 19, 2631 SC Nootdorp</p>
+          <p style="color: #999; font-size: 13px; margin-top: 24px;">${bedrijf}${adres ? " · " + adres : ""}</p>
         </div>
       `;
 
@@ -87,17 +93,14 @@ export default async function handler(req, res) {
   }
 
   // ---------- 2. Verjaardagen ----------
+  // Elke jarige gaat alleen naar de persoon aan wie de klant is toegewezen (dus nooit naar iemand anders).
   try {
     const { data: klanten } = await supabase
       .from("clients")
-      .select("naam, geboortedatum, telefoon, email")
+      .select("naam, geboortedatum, telefoon, email, owner_id, toegewezen_aan")
       .not("geboortedatum", "is", null);
 
-    const vandaag = new Date().toLocaleDateString("nl-NL", {
-      day: "2-digit",
-      month: "2-digit",
-      timeZone: "Europe/Amsterdam",
-    }); // "dd-mm"
+    const vandaag = new Date().toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", timeZone: "Europe/Amsterdam" });
 
     const jarigen = (klanten || []).filter((k) => {
       const gd = new Date(k.geboortedatum);
@@ -105,19 +108,46 @@ export default async function handler(req, res) {
       return gdLabel === vandaag;
     });
 
-    if (jarigen.length > 0) {
-      const lijst = jarigen
+    const perPersoon = {};
+    jarigen.forEach((k) => {
+      const wie = k.toegewezen_aan || k.owner_id;
+      if (!wie) return;
+      (perPersoon[wie] = perPersoon[wie] || []).push(k);
+    });
+
+    for (const [userId, lijstKlanten] of Object.entries(perPersoon)) {
+      // Adres van de ontvanger: e-mail van zijn eigen administratie, anders zijn inlogadres
+      const { data: leden } = await supabase.from("werkruimte_leden").select("werkruimte_id").eq("user_id", userId);
+      let naar = null;
+      for (const l of leden || []) {
+        const { count } = await supabase.from("werkruimte_leden").select("user_id", { count: "exact", head: true }).eq("werkruimte_id", l.werkruimte_id);
+        if (count === 1) {
+          const { data: w } = await supabase.from("werkruimtes").select("email").eq("id", l.werkruimte_id).single();
+          if (w?.email) { naar = w.email; break; }
+        }
+      }
+      if (!naar) {
+        const { data: u } = await supabase.auth.admin.getUserById(userId);
+        naar = u?.user?.email || null;
+      }
+      if (!naar) continue;
+
+      const lijst = lijstKlanten
         .map((k) => `<li><strong>${k.naam}</strong>${k.telefoon ? ` · ${k.telefoon}` : ""}${k.email ? ` · ${k.email}` : ""}</li>`)
         .join("");
       const html = `
         <div style="font-family: system-ui, sans-serif; color: #111; max-width: 480px; margin: 0 auto;">
-          <h2 style="color: #F984E5;">🎂 Jarige klant${jarigen.length > 1 ? "en" : ""} vandaag</h2>
+          <h2 style="color: #F984E5;">🎂 Jarige klant${lijstKlanten.length > 1 ? "en" : ""} vandaag</h2>
           <ul>${lijst}</ul>
           <p style="color: #666; font-size: 14px;">Een persoonlijk berichtje doet wonderen. 💕</p>
         </div>
       `;
-      await verstuurMail("info@oymb.nl", `🎂 ${jarigen.length} jarige klant${jarigen.length > 1 ? "en" : ""} vandaag`, html);
-      resultaat.verjaardagen = jarigen.length;
+      try {
+        await verstuurMail(naar, `🎂 ${lijstKlanten.length} jarige klant${lijstKlanten.length > 1 ? "en" : ""} vandaag`, html);
+        resultaat.verjaardagen += lijstKlanten.length;
+      } catch (e) {
+        resultaat.fouten.push("Verjaardag mail: " + e.message);
+      }
     }
   } catch (e) {
     resultaat.fouten.push("Verjaardagen: " + e.message);
