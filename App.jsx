@@ -9,6 +9,7 @@ import Organisaties from "./Organisaties";
 import Intake from "./Intake";
 import Instellingen from "./Instellingen";
 import Samen from "./Samen";
+import Retreats from "./Retreats";
 import { WerkruimteProvider, useWerkruimte } from "./WerkruimteContext";
 
 const PINK = "#F984E5";
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="/facturen" element={<Facturen />} />
         <Route path="/instellingen" element={<Instellingen />} />
         <Route path="/samen" element={<Samen />} />
+        <Route path="/retreats" element={<Retreats />} />
       </Routes>
       </WerkruimteGate>
      </WerkruimteProvider>
@@ -154,6 +156,7 @@ function NavBalk() {
         >
           Facturen {facturenMenuOpen ? "▴" : "▾"}
         </button>
+        {isGedeeld && <Link to="/retreats" style={linkStyle("/retreats")}>Retreats</Link>}
         {isGedeeld && <Link to="/samen" style={linkStyle("/samen")}>Agenda &amp; taken</Link>}
         <Link to="/instellingen" style={linkStyle("/instellingen")}>Instellingen</Link>
       </div>

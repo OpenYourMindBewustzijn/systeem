@@ -29,6 +29,7 @@ const fmtDatum = (d) => new Date(d).toLocaleDateString("nl-NL", { day: "numeric"
  */
 export function genereerFactuurPDF(factuur, organisatie, sessies) {
   const BEDRIJF = bedrijfVan(factuur);
+  organisatie = organisatie || factuur.klant;
   const isCredit = Boolean(factuur.credit_van_factuurnummer);
   const doc = new jsPDF();
   const marge = 20;
@@ -154,6 +155,23 @@ export function genereerFactuurPDF(factuur, organisatie, sessies) {
     });
   });
 
+  // Facturen zonder sessies (bijv. retreats) hebben eigen regels: { omschrijving, aantal, bedrag }
+  (factuur.regels || []).forEach((regel) => {
+    if (rijIndex % 2 === 1) {
+      doc.setFillColor(248, 248, 248);
+      doc.rect(marge, y, 170, rijHoogte, "F");
+    }
+    doc.setFontSize(8.5);
+    doc.text(rijIndex === 0 ? fmtDatum(factuur.periode_start) : "", marge + 3, y + 5);
+    doc.text(rijIndex === 0 ? (factuur.klant?.naam || "").slice(0, 22) : "", marge + 26, y + 5);
+    doc.setFontSize(9);
+    doc.text(String(regel.omschrijving || "").slice(0, 38), marge + 70, y + 5);
+    doc.text(String(regel.aantal ?? "1"), marge + 128, y + 5);
+    doc.text(euro(teken * Number(regel.bedrag || 0)), 187, y + 5, { align: "right" });
+    y += rijHoogte;
+    rijIndex++;
+  });
+
   y += 6;
   doc.setDrawColor(230, 230, 230);
   doc.line(120, y, 190, y);
@@ -165,7 +183,8 @@ export function genereerFactuurPDF(factuur, organisatie, sessies) {
   doc.text("Subtotaal (excl. btw):", 120, y);
   doc.text(euro(factuur.subtotaal), 187, y, { align: "right" });
   y += 7;
-  doc.text(`Btw (${BEDRIJF.btwPercentage}%):`, 120, y);
+  const btwPerc = Number(factuur.subtotaal) ? Math.round((Math.abs(factuur.btw_bedrag) / Math.abs(factuur.subtotaal)) * 1000) / 10 : BEDRIJF.btwPercentage;
+  doc.text(`Btw (${String(btwPerc).replace(".", ",")}%):`, 120, y);
   doc.text(euro(factuur.btw_bedrag), 187, y, { align: "right" });
   y += 9;
 

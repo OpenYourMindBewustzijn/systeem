@@ -210,6 +210,8 @@ export default function Facturen() {
       .insert([
         {
           organisatie_id: invoice.organisatie_id,
+          regels: invoice.regels,
+          klant: invoice.klant,
           werkruimte_id: invoice.werkruimte_id,
           uitgever: invoice.uitgever,
           uitgever_werkruimte_id: invoice.uitgever_werkruimte_id,
@@ -458,7 +460,7 @@ export default function Facturen() {
                 <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 16, color: "#111" }}>
-                      {f.factuurnummer} — {f.organisaties?.naam || "Onbekende organisatie"}
+                      {f.factuurnummer} — {f.organisaties?.naam || f.klant?.naam || "Onbekende organisatie"}
                     </div>
                     {f.uitgever?.bedrijfsnaam && (
                       <div style={{ color: "#666", fontSize: 12, marginTop: 2 }}>
