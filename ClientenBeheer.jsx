@@ -845,12 +845,12 @@ function VervolgafspraakBlok({ client, onUpdated }) {
     setMailStatus("bezig");
     const startDatumTijd = new Date(`${datum}T${tijd}`);
     try {
+      const { data: sd } = await supabase.auth.getSession();
       const response = await fetch("/api/verstuur-afspraakbevestiging", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sd.session?.access_token}` },
         body: JSON.stringify({
-          email: client.email,
-          naam: client.naam,
+          clientId: client.id,
           datumTijd: startDatumTijd.toISOString(),
           duurMinuten: duur,
           locatie: locatie,
