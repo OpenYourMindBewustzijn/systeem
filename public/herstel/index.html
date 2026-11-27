@@ -217,7 +217,7 @@ async function uploadAll(dagId,opt={}){
   const ext=(p.naam.split(".").pop()||"bin").toLowerCase().replace(/[^a-z0-9]/g,"");
   const pad=`${cur}/${uid()}.${ext}`;
   await q(sb.storage.from(BUCKET).upload(pad,p.blob,{contentType:p.mime||"application/octet-stream"}));
-  const [row]=await q(sb.from("hd_bestanden").insert({client_id:cur,pad,naam:p.naam,mime:p.mime,grootte:p.blob.size,soort:soortVan(p.mime),dagboek_id:dagId||null,notitie:p.note||null,map:opt.map||"overig",afspraak_id:opt.afspraak||null}).select("id,soort"));
+  const [row]=await q(sb.from("hd_bestanden").insert({client_id:cur,pad,naam:p.naam,mime:p.mime,grootte:p.blob.size,soort:soortVan(p.mime),dagboek_id:dagId||null,notitie:p.note||null,map:opt.map||"overig",afspraak_id:opt.afspraak||null,case_id:opt.caseId||null}).select("id,soort"));
   if(row.soort==="spraak")spraak.push(row.id);
  }
  pending=[];
@@ -298,7 +298,8 @@ function updForm(r,mode){
    logH(i,parts.join(" "));i.stand=t;i.urg=$("uu").value;i.status=$("us").value;if(i.status==="klaar")i.top=false}
   await q(sb.from("hd_items").update({data:i,updated_at:new Date().toISOString()}).eq("id",r.id));toast("Opgeslagen");vOverzicht()};
 }
-function itemForm(r){
+async function loadCases(){window._cases=await q(sb.from("hd_cases").select("id,naam").eq("client_id",cur).order("naam"))}
+async function itemForm(r){await loadCases();
  const i=r?r.data:{cat:"anders",urg:"maand",status:"todo",checks:[],oymb:"nee"};
  $("ef").innerHTML=`<div class="panel" style="margin-top:18px"><h2>${r?"Onderwerp aanpassen":"Nieuw onderwerp"}</h2><form id="if" class="grid">
  <label class="full" for="iw">Wat speelt er?<input id="iw" required value="${esc(i.wat)}"></label>
@@ -307,6 +308,7 @@ function itemForm(r){
  <label for="iu">Hoe urgent?<select id="iu">${LANES.map(([k,n])=>`<option value="${k}" ${k===i.urg?"selected":""}>${n}</option>`).join("")}</select></label>
  <label for="is">Status<select id="is">${Object.entries(STAT).map(([k,n])=>`<option value="${k}" ${k===i.status?"selected":""}>${n}</option>`).join("")}</select></label>
  <label for="idl">Uiterste datum<input id="idl" type="date" value="${esc(i.dl)}"></label>
+ <label for="icase">Case<select id="icase"><option value="">Geen case</option>${(window._cases||[]).map(c=>`<option value="${c.id}" ${c.id===r?.case_id?"selected":""}>${esc(c.naam)}</option>`).join("")}</select></label>
  <label for="io">Bij Wendy?<select id="io"><option value="nee" ${i.oymb!=="ja"?"selected":""}>Nee, bij anderen</option><option value="ja" ${i.oymb==="ja"?"selected":""}>Ja</option></select></label>
  <label class="full" for="ist">Wat is de stand nu?<textarea id="ist">${esc(i.stand)}</textarea></label>
  <label class="full" for="ick">Checklist <small>één stap per regel</small><textarea id="ick">${esc((i.checks||[]).map(c=>c.t).join("\n"))}</textarea></label>
@@ -318,7 +320,7 @@ function itemForm(r){
   const old=Object.fromEntries((i.checks||[]).map(c=>[c.t,c.d]));
   const d={...i,wat:$("iw").value.trim(),cat:$("ic").value,wie:$("iwie").value.trim(),urg:$("iu").value,status:$("is").value,dl:$("idl").value,oymb:$("io").value,stand:$("ist").value.trim(),checks:$("ick").value.split("\n").map(t=>t.trim()).filter(Boolean).map(t=>({t,d:!!old[t]}))};
   if(r){const ch=[];if(d.stand!==(i.stand||""))ch.push(`stand: ${d.stand}`+(i.stand?` (eerder: ${i.stand})`:""));if(d.status!==i.status)ch.push(`status: ${STAT[d.status]}`);if(d.urg!==i.urg)ch.push(`urgentie: ${LANES.find(l=>l[0]===d.urg)[1]}`);if(d.dl!==(i.dl||""))ch.push(`datum: ${d.dl?fd(d.dl):"geen"}`);if(d.wie!==(i.wie||""))ch.push(`naar: ${d.wie}`);if(ch.length)logH(d,ch.join("; "));
-   await q(sb.from("hd_items").update({data:d,updated_at:new Date().toISOString()}).eq("id",r.id))}else await q(sb.from("hd_items").insert({client_id:cur,data:d}));
+   await q(sb.from("hd_items").update({data:d,case_id:$("icase").value||null,updated_at:new Date().toISOString()}).eq("id",r.id))}else await q(sb.from("hd_items").insert({client_id:cur,data:d,case_id:$("icase").value||null}));
   toast("Opgeslagen");vOverzicht()};
 }
 function confirmTwice(b){if(b.dataset.sure)return true;b.dataset.sure=1;const t=b.textContent;b.textContent="Zeker weten? Tik nog een keer";setTimeout(()=>{delete b.dataset.sure;b.textContent=t},4000);return false}
@@ -410,26 +412,57 @@ async function vTriggers(){
 }
 
 /* ---------- bestanden ---------- */
-const MAPS={...CATS};
+const CST={open:"Loopt",wacht:"Wacht",gesloten:"Gesloten"};
 async function vBestanden(){
- const files=await q(sb.from("hd_bestanden").select("*").eq("client_id",cur).order("created_at",{ascending:false}));
- const filt=window._map||"alle";
- const used=Object.keys(MAPS).filter(k=>files.some(f=>(f.map||"overig")===k||(k==="anders"&&(f.map||"overig")==="overig")));
- const mapOf=f=>MAPS[f.map]?f.map:"anders";
+ const [cases,files,items,afs,vs]=await Promise.all([q(sb.from("hd_cases").select("*").eq("client_id",cur).order("naam")),q(sb.from("hd_bestanden").select("*").eq("client_id",cur).order("created_at",{ascending:false})),q(sb.from("hd_items").select("id,data,case_id").eq("client_id",cur)),q(sb.from("hd_afspraken").select("*").eq("client_id",cur).order("start",{ascending:false})),q(sb.from("hd_verslagen").select("*").eq("client_id",cur).order("datum",{ascending:false}))]);
+ const sel=window._case&&(window._case==="los"||cases.some(c=>c.id===window._case))?window._case:null;
  const fileRow=f=>`<div class="file"><span class="n">${esc(f.naam)}</span><span class="note">${fd(f.created_at)}${f.notitie?" • "+esc(f.notitie):""}${f.dagboek_id?" • bij dagboek":""}${f.afspraak_id?" • bij afspraak":""}</span>${f.soort==="spraak"?media(f):`<a class="sm" data-pad="${esc(f.pad)}" target="_blank" rel="noopener">Openen</a>`}
-  <select data-fmap="${f.id}" aria-label="Map" style="width:auto;padding:6px 8px;font-size:14px">${Object.entries(MAPS).map(([k,v])=>`<option value="${k}" ${k===mapOf(f)?"selected":""}>${v}</option>`).join("")}</select>
+  <select data-fcase="${f.id}" aria-label="Case" style="width:auto;padding:6px 8px;font-size:14px"><option value="">Geen case</option>${cases.map(c=>`<option value="${c.id}" ${c.id===f.case_id?"selected":""}>${esc(c.naam)}</option>`).join("")}</select>
   ${f.soort==="spraak"&&f.ai_status!=="klaar"?`<button class="sm" data-uit="${f.id}">${f.ai_status==="bezig"?"Bezig… opnieuw":"Uitschrijven"}</button>`:""}${f.transcript?`<details style="flex-basis:100%"><summary style="cursor:pointer;font-weight:700">Uitgeschreven tekst</summary><p style="white-space:pre-wrap;margin:6px 0">${esc(f.transcript)}</p>${f.verslag?.samenvatting?`<p><b>Samenvatting:</b> ${esc(f.verslag.samenvatting)}</p>`:""}</details>`:""}${f.created_by===me.id?`<button class="sm danger" data-fdel="${f.id}">Verwijderen</button>`:""}</div>`;
- const groups=Object.entries(MAPS).map(([k,v])=>[k,v,files.filter(f=>mapOf(f)===k)]).filter(g=>g[2].length&&(filt==="alle"||filt===g[0]));
- $("main").innerHTML=`<div class="panel"><h2>Document of spraakbericht toevoegen</h2><p class="hint">Brieven (PDF of Word), foto's van brieven of spraakberichten. Kies in welk dossier het hoort. Maximaal 50 MB per bestand.</p>
- <form id="bf" class="grid"><label for="bm">Dossier<select id="bm">${Object.entries(MAPS).map(([k,v])=>`<option value="${k}" ${k===(filt==="alle"?"anders":filt)?"selected":""}>${v}</option>`).join("")}</select></label><label for="bn">Waar gaat het over? <small>optioneel</small><input id="bn"></label>${attachUI("batt")}
- <div class="row end full"><button class="main">Opslaan</button></div></form></div>
- <div class="panel"><h2>Dossiers</h2><div class="seg" style="margin-bottom:12px"><button class="sm" data-fm="alle" aria-pressed="${filt==="alle"}">Alles (${files.length})</button>${Object.entries(MAPS).filter(([k])=>files.some(f=>mapOf(f)===k)).map(([k,v])=>`<button class="sm" data-fm="${k}" aria-pressed="${filt===k}">${v} (${files.filter(f=>mapOf(f)===k).length})</button>`).join("")}</div>
- ${groups.map(([k,v,L])=>`<h3 style="font-size:19px;margin:16px 0 8px">${v}</h3><div class="files">${L.map(fileRow).join("")}</div>`).join("")||'<p class="hint">Nog geen documenten.</p>'}</div>`;
- fillMedia($("main"));wireAttach($("batt"));
- $("bf").onsubmit=async e=>{e.preventDefault();if(!pending.length){toast("Kies eerst een bestand of spreek iets in");return}const b=e.target.querySelector(".main");b.disabled=true;
-  try{const note=$("bn").value.trim();for(const p of pending)p.note=note;await uploadAll(null,{map:$("bm").value});toast("Opgeslagen");vBestanden()}catch(err){b.disabled=false}};
- $("main").onchange=async e=>{const id=e.target.dataset.fmap;if(id){await q(sb.from("hd_bestanden").update({map:e.target.value}).eq("id",id));toast("Verplaatst");vBestanden()}};
- $("main").onclick=async e=>{const m=e.target.closest("[data-fm]");if(m){window._map=m.dataset.fm;vBestanden();return}const u=e.target.closest("[data-uit]");if(u){u.disabled=true;await uitschrijven(u.dataset.uit);return}const b=e.target.closest("[data-fdel]");if(!b)return;if(!confirmTwice(b))return;const f=files.find(x=>x.id===b.dataset.fdel);await q(sb.storage.from(BUCKET).remove([f.pad]));await q(sb.from("hd_bestanden").delete().eq("id",f.id));vBestanden()};
+ const uploadForm=caseId=>`<div class="panel"><h2>Document of spraakbericht toevoegen</h2><p class="hint">Brieven (PDF of Word), foto's van brieven of spraakberichten. Maximaal 50 MB per bestand.</p>
+  <form id="bf" class="grid"><label for="bn" class="full">Waar gaat het over? <small>optioneel</small><input id="bn"></label>${attachUI("batt")}<input type="hidden" id="bc" value="${caseId||""}">
+  <div class="row end full"><button class="main">Opslaan</button></div></form></div>`;
+ if(!sel){
+  const cnt=c=>({d:files.filter(f=>f.case_id===c.id).length,o:items.filter(i=>i.case_id===c.id&&!["klaar","vervallen"].includes(i.data.status)).length,a:afs.filter(a=>a.case_id===c.id&&new Date(a.start)>new Date()).length});
+  $("main").innerHTML=`<div class="row" style="margin-bottom:12px"><h2 style="font-size:26px;flex:1">Dossiers per case</h2><button class="main" data-cnew>+ Nieuwe case</button></div><div id="cf"></div>
+  <div class="lanes" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))">${cases.map(c=>{const n=cnt(c);return `<article class="card" style="border-left:4px solid ${c.status==="gesloten"?"var(--line)":c.status==="wacht"?"var(--sun)":"var(--green)"}"><h4>${esc(c.naam)}</h4><p class="note">${esc(c.omschrijving||"")}</p><div class="tags"><span class="tag">${CST[c.status]}</span><span class="tag">${n.o} open onderwerpen</span><span class="tag">${n.d} documenten</span>${n.a?`<span class="tag late">${n.a} afspraak</span>`:""}</div><div class="row" style="margin-top:8px"><button class="sm main" data-copen="${c.id}">Openen</button></div></article>`}).join("")}
+  <article class="card"><h4>Losse documenten</h4><p class="note">Documenten zonder case.</p><div class="tags"><span class="tag">${files.filter(f=>!f.case_id).length} documenten</span></div><div class="row" style="margin-top:8px"><button class="sm" data-copen="los">Openen</button></div></article></div>`;
+ }else if(sel==="los"){
+  $("main").innerHTML=`<div class="row" style="margin-bottom:12px"><button class="sm" data-cback>← Alle dossiers</button></div>${uploadForm("")}<div class="panel"><h2>Losse documenten</h2><div class="files">${files.filter(f=>!f.case_id).map(fileRow).join("")||'<p class="hint">Geen losse documenten.</p>'}</div></div>`;
+ }else{
+  const c=cases.find(x=>x.id===sel),its=items.filter(i=>i.case_id===c.id),fs=files.filter(f=>f.case_id===c.id),as=afs.filter(a=>a.case_id===c.id),vv=vs.filter(v=>v.case_id===c.id);
+  const T=[...fs.map(f=>({d:f.created_at,t:`Document: ${f.naam}`})),...as.map(a=>({d:a.start,t:`Afspraak: ${a.titel}${a.verslag?" (met verslag)":""}`})),...vv.map(v=>({d:v.datum,t:`Verslag: ${v.titel}`})),...its.flatMap(i=>(i.data.historie||[]).map(h=>({d:h.op,t:`${i.data.wat}: ${h.wat} (${h.door})`})))].sort((a,b)=>new Date(b.d)-new Date(a.d));
+  $("main").innerHTML=`<div class="row" style="margin-bottom:12px"><button class="sm" data-cback>← Alle dossiers</button></div>
+  <div class="panel"><div class="row"><h2 style="flex:1">${esc(c.naam)}</h2><span class="tag">${CST[c.status]}</span><button class="sm" data-cedit="${c.id}">Aanpassen</button></div>
+   <p>${esc(c.omschrijving||"")}</p><dl class="entry" style="border:0;padding:0;margin:0"><dl style="margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px">${[["Contact",c.contact],["Kenmerk / zaaknummer",c.kenmerk]].filter(x=>x[1]).map(x=>`<dt style="color:var(--soft)">${x[0]}</dt><dd style="margin:0">${esc(x[1])}</dd>`).join("")}</dl></dl><div id="cf"></div></div>
+  <div class="panel"><h2>Onderwerpen</h2>${its.map(i=>`<p style="margin:4px 0"><b>${esc(i.data.wat)}</b> <span class="tag ${i.data.status==="vervallen"?"":"" }">${STAT[i.data.status]||"Te doen"}</span> <span class="note">${esc(i.data.stand||"").slice(0,140)}${(i.data.stand||"").length>140?"…":""}</span></p>`).join("")||'<p class="hint">Nog geen onderwerpen gekoppeld. Koppel ze via Overzicht → Aanpassen.</p>'}</div>
+  ${uploadForm(c.id)}
+  <div class="panel"><h2>Documenten (${fs.length})</h2><div class="files">${fs.map(fileRow).join("")||'<p class="hint">Nog geen documenten.</p>'}</div></div>
+  <div class="panel"><h2>Afspraken en verslagen</h2>${as.map(a=>`<p style="margin:4px 0"><b>${fd(a.start)}</b> • ${esc(a.titel)}${a.verslag?" • verslag":""}</p>`).join("")}${vv.map(v=>`<details class="entry"><summary style="cursor:pointer"><b>${esc(v.titel)}</b> <span class="note">${fd(v.datum)}</span></summary><div style="white-space:pre-wrap;margin-top:6px">${esc(v.tekst)}</div></details>`).join("")||(as.length?"":'<p class="hint">Nog niets.</p>')}</div>
+  <div class="panel"><h2>Tijdlijn</h2>${T.map(x=>`<p style="margin:4px 0;font-size:15px"><b>${fd(x.d)}</b> • ${esc(x.t)}</p>`).join("")||'<p class="hint">Nog niets.</p>'}</div>`;
+ }
+ fillMedia($("main"));
+ if($("batt")){wireAttach($("batt"));$("bf").onsubmit=async e=>{e.preventDefault();if(!pending.length){toast("Kies eerst een bestand of spreek iets in");return}const b=e.target.querySelector(".main");b.disabled=true;
+  try{const note=$("bn").value.trim();for(const p of pending)p.note=note;await uploadAll(null,{caseId:$("bc").value||null});toast("Opgeslagen");vBestanden()}catch(err){b.disabled=false}}}
+ const caseForm=c=>{$("cf").innerHTML=`<form id="cfm" class="grid panel" style="background:var(--lane);margin-top:12px">
+  <label class="full" for="cn2">Naam van de case<input id="cn2" required value="${esc(c?.naam)}" placeholder="bijvoorbeeld: Woonbron"></label>
+  <label class="full" for="co">Waar gaat het over?<textarea id="co">${esc(c?.omschrijving)}</textarea></label>
+  <label for="cc">Contactpersoon<input id="cc" value="${esc(c?.contact)}"></label>
+  <label for="ck2">Kenmerk of zaaknummer<input id="ck2" value="${esc(c?.kenmerk)}"></label>
+  <label for="cs">Status<select id="cs">${Object.entries(CST).map(([k,n])=>`<option value="${k}" ${k===(c?.status||"open")?"selected":""}>${n}</option>`).join("")}</select></label>
+  <div class="row end full">${c?'<button type="button" class="danger" id="cdel">Verwijderen</button>':""}<button type="button" id="ccx">Annuleren</button><button class="main">Opslaan</button></div></form>`;
+  $("ccx").onclick=()=>$("cf").innerHTML="";
+  if($("cdel"))$("cdel").onclick=async()=>{if(!confirmTwice($("cdel")))return;await q(sb.from("hd_cases").delete().eq("id",c.id));window._case=null;vBestanden()};
+  $("cfm").onsubmit=async e=>{e.preventDefault();const d={naam:$("cn2").value.trim(),omschrijving:$("co").value.trim(),contact:$("cc").value.trim(),kenmerk:$("ck2").value.trim(),status:$("cs").value};
+   if(c)await q(sb.from("hd_cases").update(d).eq("id",c.id));else{const [n]=await q(sb.from("hd_cases").insert({client_id:cur,...d}).select("id"));window._case=n.id}toast("Opgeslagen");vBestanden()}};
+ $("main").onchange=async e=>{const id=e.target.dataset.fcase;if(id){await q(sb.from("hd_bestanden").update({case_id:e.target.value||null}).eq("id",id));toast("Verplaatst");vBestanden()}};
+ $("main").onclick=async e=>{const b=e.target.closest("button");if(!b)return;
+  if(b.dataset.copen){window._case=b.dataset.copen;vBestanden();return}
+  if(b.hasAttribute("data-cback")){window._case=null;vBestanden();return}
+  if(b.hasAttribute("data-cnew"))caseForm(null);
+  if(b.dataset.cedit)caseForm(cases.find(c=>c.id===b.dataset.cedit));
+  if(b.dataset.uit){b.disabled=true;await uitschrijven(b.dataset.uit);return}
+  if(b.dataset.fdel){if(!confirmTwice(b))return;const f=files.find(x=>x.id===b.dataset.fdel);await q(sb.storage.from(BUCKET).remove([f.pad]));await q(sb.from("hd_bestanden").delete().eq("id",f.id));vBestanden()}};
 }
 
 /* ---------- agenda ---------- */
@@ -442,7 +475,7 @@ function ics(a){
  const url=URL.createObjectURL(new Blob([txt],{type:"text/calendar"}));const l=document.createElement("a");l.href=url;l.download=(a.titel||"afspraak").replace(/[^\w\- ]/g,"")+".ics";document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);
 }
 async function vAgenda(){
- const [afs,items,files]=await Promise.all([q(sb.from("hd_afspraken").select("*").eq("client_id",cur).order("start")),q(sb.from("hd_items").select("id,data").eq("client_id",cur)),q(sb.from("hd_bestanden").select("*").eq("client_id",cur).not("afspraak_id","is",null))]);
+ const [afs,items,files]=await Promise.all([q(sb.from("hd_afspraken").select("*").eq("client_id",cur).order("start")),q(sb.from("hd_items").select("id,data,case_id").eq("client_id",cur)),q(sb.from("hd_bestanden").select("*").eq("client_id",cur).not("afspraak_id","is",null))]);
  const now=Date.now(),kom=afs.filter(a=>new Date(a.eind||a.start).getTime()>=now-36e5),gew=afs.filter(a=>!kom.includes(a)).reverse();
  const iname=id=>items.find(i=>i.id===id)?.data?.wat;
  const dagen=d=>{const n=Math.round((new Date(new Date(d).toDateString())-new Date(new Date().toDateString()))/864e5);return n===0?"Vandaag":n===1?"Morgen":n>1?`Over ${n} dagen`:""};
@@ -471,8 +504,8 @@ async function vAgenda(){
   $("agf").onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector(".main");b.disabled=true;
    try{if(verslag){await q(sb.from("hd_afspraken").update({verslag:$("av").value.trim()}).eq("id",a.id));
      const T=$("avt").value.split("\n").map(t=>t.trim()).filter(Boolean);if(T.length)await q(sb.from("hd_taken").insert(T.map(t=>({client_id:cur,tekst:t,wie:"Nog bepalen",bron:"afspraak "+fd(a.start)}))));
-     await uploadAll(null,{afspraak:a.id,map:items.find(i=>i.id===a.item_id)?.data?.cat||"anders"})}
-    else{const d={titel:$("at").value.trim(),start:new Date($("as").value).toISOString(),eind:$("ae2").value?new Date($("ae2").value).toISOString():null,plaats:$("ap2").value.trim(),met_wie:$("aw").value.trim(),item_id:$("ai").value||null,voorbereiden:$("avb").value.trim()};
+     await uploadAll(null,{afspraak:a.id,caseId:a.case_id})}
+    else{const d={titel:$("at").value.trim(),start:new Date($("as").value).toISOString(),eind:$("ae2").value?new Date($("ae2").value).toISOString():null,plaats:$("ap2").value.trim(),met_wie:$("aw").value.trim(),item_id:$("ai").value||null,voorbereiden:$("avb").value.trim()};d.case_id=items.find(i=>i.id===d.item_id)?.case_id||a?.case_id||null;
      if(a)await q(sb.from("hd_afspraken").update(d).eq("id",a.id));else await q(sb.from("hd_afspraken").insert({client_id:cur,...d}))}
     toast("Opgeslagen");vAgenda()}catch(err){b.disabled=false}};
  };
@@ -492,15 +525,16 @@ async function vVerslagen(){
  ${all.filter(v=>filt==="alle"||v.soort===filt).map(v=>`<details class="entry"><summary style="cursor:pointer"><b>${esc(v.titel)}</b> <span class="note">${fd(v.datum)} • ${VS[v.soort]||v.soort}${isBeg&&v.k==="v"&&!v.zichtbaar_client?" • alleen voor Wendy":""}</span></summary>
   <div style="white-space:pre-wrap;margin-top:8px">${esc(v.tekst)}</div>
   <div class="row" style="margin-top:8px"><button class="sm" data-vcopy="${v.id}">Kopieer</button>${v.k==="v"&&(isBeg||v.created_by===me.id)?`<button class="sm" data-ved="${v.id}">Aanpassen</button><button class="sm danger" data-vdel="${v.id}">Verwijderen</button>`:""}${v.k==="a"?'<span class="note">Aanpassen via Agenda</span>':""}</div></details>`).join("")||'<p class="hint">Nog geen verslagen.</p>'}`;
- const form=v=>{$("vf").innerHTML=`<div class="panel"><h2>${v?"Verslag aanpassen":"Nieuw verslag"}</h2><form id="vfm" class="grid">
+ const form=async v=>{await loadCases();$("vf").innerHTML=`<div class="panel"><h2>${v?"Verslag aanpassen":"Nieuw verslag"}</h2><form id="vfm" class="grid">
   <label class="full" for="vt">Titel<input id="vt" required value="${esc(v?.titel)}"></label>
   <label for="vso">Soort<select id="vso">${Object.entries(VS).map(([k,n])=>`<option value="${k}" ${k===(v?.soort||"gesprek")?"selected":""}>${n}</option>`).join("")}</select></label>
   <label for="vd">Datum<input id="vd" type="date" value="${esc(v?.datum||new Date().toISOString().slice(0,10))}"></label>
+  <label class="full" for="vca">Case<select id="vca"><option value="">Geen case</option>${(window._cases||[]).map(c=>`<option value="${c.id}" ${c.id===v?.case_id?"selected":""}>${esc(c.naam)}</option>`).join("")}</select></label>
   <label class="full" for="vx">Tekst<textarea id="vx" style="min-height:220px">${esc(v?.tekst)}</textarea></label>
   ${isBeg?`<label class="check full"><input type="checkbox" id="vz" ${v?(v.zichtbaar_client?"checked":""):"checked"}>Elly mag dit verslag zien</label>`:""}
   <div class="row end full"><button type="button" id="vcx">Annuleren</button><button class="main">Opslaan</button></div></form></div>`;
   $("vf").scrollIntoView({behavior:"smooth"});$("vcx").onclick=()=>$("vf").innerHTML="";
-  $("vfm").onsubmit=async e=>{e.preventDefault();const d={titel:$("vt").value.trim(),soort:$("vso").value,datum:$("vd").value,tekst:$("vx").value,zichtbaar_client:isBeg?$("vz").checked:true};
+  $("vfm").onsubmit=async e=>{e.preventDefault();const d={titel:$("vt").value.trim(),soort:$("vso").value,datum:$("vd").value,tekst:$("vx").value,case_id:$("vca").value||null,zichtbaar_client:isBeg?$("vz").checked:true};
    if(v)await q(sb.from("hd_verslagen").update(d).eq("id",v.id));else await q(sb.from("hd_verslagen").insert({client_id:cur,...d}));toast("Opgeslagen");vVerslagen()}};
  $("main").onclick=async e=>{const b=e.target.closest("button");if(!b)return;
   if(b.dataset.vf){window._vs=b.dataset.vf;vVerslagen();return}
