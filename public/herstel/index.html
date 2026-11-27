@@ -183,14 +183,14 @@ function whoBar(){
  if($("csel"))$("csel").onchange=()=>{cur=$("csel").value;show()};
 }
 function nav(){
- const T=[["overzicht","Overzicht"],["agenda","Agenda"],["dagboek",isBeg?"Dagboek":"Mijn dagboek"],["triggers","Triggers en herbelevingen"],["bestanden","Dossiers"],["verslagen","Verslagen"]];
+ const T=[["assistent","Assistent"],["overzicht","Overzicht"],["agenda","Agenda"],["dagboek",isBeg?"Dagboek":"Mijn dagboek"],["triggers","Triggers en herbelevingen"],["bestanden","Dossiers"],["verslagen","Verslagen"]];
  if(isBeg)T.push(["sessies","Sessies en rapportage"],["clienten","Cliënten"]);
  $("nav").innerHTML=T.map(([k,n])=>`<button data-tab="${k}" aria-current="${tab===k}">${n}</button>`).join("");
 }
 $("nav").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;tab=b.dataset.tab;nav();show()});
 function show(){stopRec();pending=[];
  if(!cur&&tab!=="clienten"){$("main").innerHTML='<div class="panel"><h2>Nog geen cliënten</h2><p>Voeg eerst een cliënt toe bij "Cliënten".</p></div>';return}
- ({overzicht:vOverzicht,agenda:vAgenda,verslagen:vVerslagen,dagboek:vDagboek,triggers:vTriggers,bestanden:vBestanden,sessies:vSessies,clienten:vClienten})[tab]();
+ ({assistent:vAssistent,overzicht:vOverzicht,agenda:vAgenda,verslagen:vVerslagen,dagboek:vDagboek,triggers:vTriggers,bestanden:vBestanden,sessies:vSessies,clienten:vClienten})[tab]();
 }
 
 /* ---------- spraak en bijlagen ---------- */
@@ -463,6 +463,47 @@ async function vBestanden(){
   if(b.dataset.cedit)caseForm(cases.find(c=>c.id===b.dataset.cedit));
   if(b.dataset.uit){b.disabled=true;await uitschrijven(b.dataset.uit);return}
   if(b.dataset.fdel){if(!confirmTwice(b))return;const f=files.find(x=>x.id===b.dataset.fdel);await q(sb.storage.from(BUCKET).remove([f.pad]));await q(sb.from("hd_bestanden").delete().eq("id",f.id));vBestanden()}};
+}
+
+/* ---------- assistent ---------- */
+let chat=[];let chatFor=null;
+const QUICK=["Wat is nu het belangrijkst?","Wat moet er deze week gebeuren?","Wat blijft liggen of is verlopen?","Bereid mijn volgende afspraak voor","Wat is er de laatste tijd veranderd?","Wie doet wat? Maak een lijst per persoon"];
+async function vAssistent(){
+ if(chatFor!==cur){chat=[];chatFor=cur}
+ const render=()=>{
+  $("chat").innerHTML=chat.map((m,k)=>m.rol==="ik"?`<div class="entry" style="background:var(--lane);margin-left:auto;max-width:85%"><b>Jij:</b> ${esc(m.tekst)}</div>`:
+   `<div class="entry"><div style="white-space:pre-wrap">${esc(m.tekst)}</div>${(m.voorstellen||[]).length?`<div style="margin-top:10px"><b>Voorstellen</b> <span class="note">(jij beslist)</span>${m.voorstellen.map((v,j)=>`<div class="plan" style="margin:6px 0"><div>${v.soort==="taak"?`Taak: ${esc(v.tekst)} <span class="note">(${esc(v.wie||"")})</span>`:v.soort==="urgentie"?`Zet "${esc(v.onderwerp)}" op <b>${esc({nu:"Nu",maand:"Deze maand",wacht:"Kan wachten"}[v.naar]||v.naar)}</b>${v.reden?` <span class="note">— ${esc(v.reden)}</span>`:""}`:`Nieuwe stand voor "${esc(v.onderwerp)}": ${esc(v.tekst)}${v.reden?` <span class="note">— ${esc(v.reden)}</span>`:""}`}</div>
+   <div class="row" style="margin-top:6px">${v.gedaan?`<span class="tag">${esc(v.gedaan)}</span>`:`<button class="sm main" data-ok="${k}:${j}">Doorvoeren</button><button class="sm" data-no="${k}:${j}">Niet doen</button>`}</div></div>`).join("")}</div>`:""}</div>`).join("")||'<p class="hint">Stel een vraag of kies hieronder een knop. De assistent kijkt naar alles in de app: cases, onderwerpen, taken, afspraken, verslagen en dagboek.</p>';
+  $("chat").lastElementChild?.scrollIntoView({block:"end",behavior:"smooth"});
+ };
+ $("main").innerHTML=`<div class="panel"><h2>Assistent</h2><p class="hint">Houdt overzicht over alle cases en zegt wat nu telt en wie wat doet. Voorstellen voert de assistent pas uit als jij op "Doorvoeren" drukt.</p>
+ <div class="seg" style="margin-bottom:12px">${QUICK.map(t=>`<button class="sm" data-q="${esc(t)}">${esc(t)}</button>`).join("")}</div>
+ <div id="chat"></div>
+ <form id="qf" class="row" style="margin-top:12px"><input id="qq" placeholder="Stel je vraag…" aria-label="Vraag" style="flex:1 1 240px;width:auto"><button class="main" id="qs">Vraag</button></form>
+ <p class="note">De assistent geeft geen juridisch, medisch of financieel advies. Bij direct gevaar: bel 112.</p></div>`;
+ render();
+ const ask=async vraag=>{
+  if(!vraag)return;chat.push({rol:"ik",tekst:vraag});chat.push({rol:"ai",tekst:"Even alles nalopen…"});render();$("qs").disabled=true;
+  const {data,error}=await sb.functions.invoke("herstel-ai",{body:{actie:"coordinator",client_id:cur,vraag,geschiedenis:chat.slice(0,-2).slice(-6)}});
+  chat.pop();$("qs").disabled=false;
+  if(error){let m="";try{m=(await error.context.json()).error}catch(e){}chat.push({rol:"ai",tekst:m==="geen_sleutel"?"De assistent staat nog uit. Zet eerst de OpenAI-sleutel in Supabase (Edge Functions → Secrets → OPENAI_API_KEY).":"Dat lukte nu niet. Probeer het zo nog eens."})}
+  else chat.push({rol:"ai",tekst:data.antwoord,voorstellen:data.voorstellen});
+  render();
+ };
+ $("qf").onsubmit=e=>{e.preventDefault();const v=$("qq").value.trim();$("qq").value="";ask(v)};
+ $("main").onclick=async e=>{const b=e.target.closest("button");if(!b)return;
+  if(b.dataset.q){ask(b.dataset.q);return}
+  const id=b.dataset.ok||b.dataset.no;if(!id)return;const [k,j]=id.split(":").map(Number),v=chat[k].voorstellen[j];
+  if(b.dataset.no){v.gedaan="Niet gedaan";render();return}
+  b.disabled=true;
+  try{
+   if(v.soort==="taak"){await q(sb.from("hd_taken").insert({client_id:cur,tekst:String(v.tekst).slice(0,200),wie:v.wie||"Nog bepalen",bron:"assistent"}));v.gedaan="Taak toegevoegd"}
+   else{const rows=await q(sb.from("hd_items").select("id,data").eq("client_id",cur));const r=rows.find(x=>(x.data.wat||"").toLowerCase()===String(v.onderwerp||"").toLowerCase());
+    if(!r){toast("Onderwerp niet gevonden");b.disabled=false;return}
+    if(v.soort==="urgentie"&&["nu","maand","wacht"].includes(v.naar)){logH(r.data,`urgentie: ${LANES.find(l=>l[0]===v.naar)[1]} (voorstel assistent${v.reden?": "+v.reden:""})`);r.data.urg=v.naar}
+    if(v.soort==="stand"){logH(r.data,`stand: ${v.tekst}${r.data.stand?` (eerder: ${r.data.stand})`:""} (voorstel assistent)`);r.data.stand=String(v.tekst)}
+    await q(sb.from("hd_items").update({data:r.data,updated_at:new Date().toISOString()}).eq("id",r.id));v.gedaan="Doorgevoerd"}
+   render();toast("Doorgevoerd")}catch(err){b.disabled=false}};
 }
 
 /* ---------- agenda ---------- */
