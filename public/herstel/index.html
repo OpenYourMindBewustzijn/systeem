@@ -117,6 +117,7 @@ label small{font-weight:400;color:var(--soft);font-size:13px}
 {
 const SB_URL="https://euvwpdmrbsjqkluaeqpi.supabase.co";
 const SB_KEY="sb_publishable_wVoqjZAfae3OO715_wIN5w_KbGytRMC";
+const urlType=(location.hash.match(/type=(\w+)/)||[])[1]||"";
 const sb=supabase.createClient(SB_URL,SB_KEY);
 const BUCKET="herstel";
 const $=id=>document.getElementById(id);
@@ -141,7 +142,7 @@ const C=()=>clients.find(c=>c.id===cur);
 /* ---------- inloggen ---------- */
 function authView(mode="in"){
  $("nav").innerHTML="";$("who").innerHTML="";
- const t={in:"Inloggen",up:"Account maken",reset:"Wachtwoord vergeten",nieuw:"Nieuw wachtwoord"}[mode];
+ const t={in:"Inloggen",up:"Account maken",reset:"Wachtwoord vergeten",nieuw:urlType==="invite"?"Welkom! Kies je wachtwoord":"Nieuw wachtwoord"}[mode];
  $("main").innerHTML=`<div class="auth panel"><h2>${t}</h2>
  ${mode==="up"?'<p class="hint">Gebruik het e-mailadres dat je aan Wendy hebt gegeven. Je krijgt een mail om je adres te bevestigen.</p>':""}
  ${mode==="reset"?'<p class="hint">Je krijgt een mail met een link om een nieuw wachtwoord te kiezen.</p>':""}
@@ -157,7 +158,7 @@ function authView(mode="in"){
    if(mode==="in"){await q(sb.auth.signInWithPassword({email:em,password:pw}))}
    else if(mode==="up"){await q(sb.auth.signUp({email:em,password:pw,options:{emailRedirectTo:back}}));$("main").innerHTML='<div class="auth panel"><h2>Bijna klaar</h2><p>Kijk in je mail en klik op de link om je e-mailadres te bevestigen. Daarna kun je inloggen.</p></div>'}
    else if(mode==="reset"){await q(sb.auth.resetPasswordForEmail(em,{redirectTo:back}));toast("Mail verstuurd, kijk in je inbox")}
-   else{await q(sb.auth.updateUser({password:pw}));toast("Nieuw wachtwoord opgeslagen");start()}
+   else{await q(sb.auth.updateUser({password:pw}));window._pwSet=true;history.replaceState(null,"",location.pathname);toast("Wachtwoord opgeslagen");start()}
   }catch(err){}finally{b.disabled=false}
  });
 }
@@ -168,6 +169,7 @@ async function start(){
  const {data:{session}}=await sb.auth.getSession();
  if(!session){authView();return}
  me=session.user;
+ if((urlType==="invite"||urlType==="recovery")&&!window._pwSet){authView("nieuw");return}
  isBeg=!!(await q(sb.rpc("hd_ben_begeleider")));
  await q(sb.rpc("hd_koppel"));
  clients=await q(sb.from("hd_clienten").select("*").order("naam"));
@@ -639,14 +641,18 @@ async function vSessies(){
 
 /* ---------- cliënten (begeleider) ---------- */
 async function vClienten(){
- $("main").innerHTML=`<div class="panel"><h2>Cliënt toevoegen</h2><p class="hint">Vul het e-mailadres in waarmee de cliënt een account maakt. Zodra zij inlogt met een bevestigd adres, wordt ze vanzelf gekoppeld.</p>
+ $("main").innerHTML=`<div class="panel"><h2>Cliënt toevoegen</h2><p class="hint">Voeg de cliënt toe en tik daarna op "Uitnodiging mailen". Ze krijgt een mail, kiest een wachtwoord en is meteen gekoppeld.</p>
  <form id="cf" class="grid"><label for="cn">Naam<input id="cn" required></label><label for="ce">E-mailadres<input id="ce" type="email" required></label><div class="row end full"><button class="main">Toevoegen</button></div></form></div>
  <div class="panel"><h2>Mijn cliënten</h2>${clients.map(c=>`<div class="entry"><div class="row"><b style="flex:1">${esc(c.naam)}</b><span class="note">${esc(c.email)} • ${c.user_id?"gekoppeld":"wacht op eerste login"}</span></div>
- <div class="row" style="margin-top:8px"><label class="sm" style="display:inline-flex"><button type="button" class="sm" data-imp="${c.id}">Gegevens laden uit bestand (.json)</button></label></div></div>`).join("")||'<p class="hint">Nog geen cliënten.</p>'}
+ <div class="row" style="margin-top:8px">${c.user_id?"":`<button type="button" class="sm main" data-inv="${c.id}">Uitnodiging mailen</button>`}<label class="sm" style="display:inline-flex"><button type="button" class="sm" data-imp="${c.id}">Gegevens laden uit bestand (.json)</button></label></div></div>`).join("")||'<p class="hint">Nog geen cliënten.</p>'}
  <input type="file" id="impf" accept=".json,application/json" hidden></div>`;
  $("cf").onsubmit=async e=>{e.preventDefault();await q(sb.from("hd_clienten").insert({naam:$("cn").value.trim(),email:$("ce").value.trim().toLowerCase()}));toast("Toegevoegd");await start();tab="clienten";nav();vClienten()};
  let impC=null;
- $("main").onclick=e=>{const b=e.target.closest("[data-imp]");if(b){impC=b.dataset.imp;$("impf").click()}};
+ $("main").onclick=async e=>{const v=e.target.closest("[data-inv]");if(v){v.disabled=true;
+  const {data,error}=await sb.functions.invoke("herstel-ai",{body:{actie:"uitnodigen",client_id:v.dataset.inv,terug:location.origin+location.pathname}});v.disabled=false;
+  if(error){let m="";try{m=(await error.context.json()).error}catch(x){}toast("Mail versturen lukte niet: "+(m||"onbekende fout"));return}
+  toast(data.bestaat?"Dit adres heeft al een account. Laat de cliënt gewoon inloggen.":data.al_gekoppeld?"Deze cliënt is al gekoppeld.":"Uitnodiging verstuurd. Kijk ook in de spam.");return}
+  const b=e.target.closest("[data-imp]");if(b){impC=b.dataset.imp;$("impf").click()}};
  $("impf").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f||!impC)return;
   try{const d=JSON.parse(await f.text());const items=(d.items||[]).map(({id,ex,bron,...rest})=>({client_id:impC,data:{...rest,bron}}));
    if(items.length)await q(sb.from("hd_items").insert(items));
