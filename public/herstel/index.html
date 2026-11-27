@@ -130,7 +130,9 @@ const uid=()=>crypto.randomUUID();
 
 const CATS={herstel:"Hersteloperatie toeslagen",wonen:"Wonen en verhuurder",recht:"Rechtszaak of juridische brief",geld:"Geld en schulden",wmo:"Gemeente en Wmo",klacht:"Klachten",veilig:"Veiligheid en bedreiging",zorg:"Zorg en gezondheid",rust:"Spanning, rust en herstel",regie:"Overzicht over alle instanties",schade:"Losse schadeclaims",post:"Post en administratie",anders:"Iets anders"};
 const LANES=[["nu","Nu"],["maand","Deze maand"],["wacht","Kan wachten"]];
-const STAT={todo:"Te doen",bezig:"Bezig",wacht:"Wacht op antwoord",klaar:"Klaar"};
+const STAT={todo:"Te doen",bezig:"Bezig",wacht:"Wacht op antwoord",klaar:"Klaar",vervallen:"Niet meer actueel"};
+const ikNaam=()=>isBeg?"Wendy":(C()?.naam||"Ik");
+const logH=(d,wat)=>{d.historie=[...(d.historie||[]),{op:new Date().toISOString(),door:ikNaam(),wat}];d.gewijzigd=new Date().toISOString()};
 const MOOD=["Heel zwaar","Zwaar","Gaat wel","Goed","Heel goed"];
 
 let me=null,isBeg=false,clients=[],cur=null,tab="overzicht",editItem=null,pending=[],rec=null,recChunks=[],recStream=null,editTrig=null;
@@ -240,14 +242,16 @@ const media=f=>f.soort==="spraak"?`<audio controls preload="none" data-pad="${es
 /* ---------- overzicht ---------- */
 async function vOverzicht(){
  const [items,taken]=await Promise.all([q(sb.from("hd_items").select("*").eq("client_id",cur)),q(sb.from("hd_taken").select("*").eq("client_id",cur).order("created_at"))]);
- const open=items.filter(i=>i.data.status!=="klaar");
+ const open=items.filter(i=>!["klaar","vervallen"].includes(i.data.status)),done=items.filter(i=>i.data.status==="klaar"),verv=items.filter(i=>i.data.status==="vervallen");
+ const recent=d=>d.gewijzigd&&(Date.now()-new Date(d.gewijzigd))<7*864e5;
+ const hist=i=>(i.historie||[]).length?`<details style="margin-top:6px"><summary style="cursor:pointer;font-size:14px;font-weight:700">Geschiedenis (${i.historie.length})</summary>${[...i.historie].reverse().map(h=>`<p style="font-size:14px;margin:4px 0"><b>${fd(h.op)}</b> • ${esc(h.door)}: ${esc(h.wat)}</p>`).join("")}</details>`:"";
  const days=dl=>dl?Math.round((new Date(dl+"T00:00:00")-new Date(new Date().toDateString()))/864e5):null;
  const ord=(a,b)=>(!!b.data.top-!!a.data.top)||((days(a.data.dl)??9e3)-(days(b.data.dl)??9e3));
  const dlTag=d=>{const n=days(d);return n==null?"":n<0?`<span class="tag late">Verlopen ${fd(d)}</span>`:`<span class="tag ${n<=7?"late":""}">Nog ${n} dagen</span>`};
  const card=r=>{const i=r.data,ch=i.checks||[];return `<article class="card"><h4>${i.top?"★ ":""}${esc(i.wat)}</h4>${i.stand?`<p>${esc(i.stand)}</p>`:""}<p class="to">Naar: ${esc(i.wie||"")}</p>
   ${ch.length?`<ul>${ch.map((c,k)=>`<li class="${c.d?"d":""}"><label><input type="checkbox" data-ck="${r.id}:${k}" ${c.d?"checked":""}><span>${esc(c.t)}</span></label></li>`).join("")}</ul>`:""}
-  <div class="tags">${dlTag(i.dl)}${i.status&&i.status!=="todo"?`<span class="tag">${STAT[i.status]}</span>`:""}<span class="tag">${CATS[i.cat]||""}</span>${i.oymb==="ja"?'<span class="tag oymb">Bij Wendy</span>':""}</div>
-  <div class="row" style="margin-top:8px"><button class="sm" data-edit="${r.id}">Aanpassen</button><button class="sm" data-top="${r.id}">${i.top?"Uit top 3":"In top 3"}</button><button class="sm" data-klaar="${r.id}">Klaar</button></div></article>`};
+  <div class="tags">${dlTag(i.dl)}${i.status&&i.status!=="todo"?`<span class="tag">${STAT[i.status]}</span>`:""}<span class="tag">${CATS[i.cat]||""}</span>${i.oymb==="ja"?'<span class="tag oymb">Bij Wendy</span>':""}${recent(i)?`<span class="tag" style="background:var(--sunbg);color:var(--sun)">Veranderd ${fd(i.gewijzigd)}</span>`:""}</div>${hist(i)}
+  <div class="row" style="margin-top:8px"><button class="sm" data-upd="${r.id}">Er is iets veranderd</button><button class="sm" data-edit="${r.id}">Aanpassen</button><button class="sm" data-top="${r.id}">${i.top?"Uit top 3":"In top 3"}</button><button class="sm" data-klaar="${r.id}">Klaar</button><button class="sm" data-verv="${r.id}">Niet meer actueel</button></div></article>`};
  const tops=open.filter(r=>r.data.top).sort(ord);
  $("main").innerHTML=`
  ${tops.length?`<div class="panel" style="background:var(--claybg);border-color:transparent"><h2 style="color:var(--clay)">Top 3</h2><ol style="margin:0;padding-left:22px">${tops.map(r=>`<li><b>${esc(r.data.wat)}</b> <span class="note">${esc(r.data.wie||"")}</span> ${dlTag(r.data.dl)}</li>`).join("")}</ol></div>`:""}
@@ -258,7 +262,8 @@ async function vOverzicht(){
  <div class="row" style="margin-bottom:10px"><h2 style="font-size:24px;flex:1">Onderwerpen</h2><button class="main" data-edit="new">+ Nieuw onderwerp</button></div>
  <div class="lanes">${LANES.map(([k,n])=>{const L=open.filter(r=>(r.data.urg||"maand")===k).sort(ord);return `<section class="lane ${k}"><h3>${n}<small>${L.length}</small></h3>${L.map(card).join("")||'<p class="hint">Niets.</p>'}</section>`}).join("")}</div>
  <div id="ef"></div>
- ${items.length-open.length?`<details class="panel" style="margin-top:18px"><summary style="font-weight:700;cursor:pointer">Klaar (${items.length-open.length})</summary>${items.filter(i=>i.data.status==="klaar").map(r=>`<p>${esc(r.data.wat)} <button class="sm" data-open="${r.id}">Terugzetten</button></p>`).join("")}</details>`:""}`;
+ ${done.length?`<details class="panel" style="margin-top:18px"><summary style="font-weight:700;cursor:pointer">Klaar (${done.length})</summary>${done.map(r=>`<div class="entry"><b>${esc(r.data.wat)}</b> <button class="sm" data-open="${r.id}">Terugzetten</button>${hist(r.data)}</div>`).join("")}</details>`:""}
+ ${verv.length?`<details class="panel" style="margin-top:12px"><summary style="font-weight:700;cursor:pointer">Niet meer actueel (${verv.length})</summary>${verv.map(r=>`<div class="entry"><b>${esc(r.data.wat)}</b> <span class="note">sinds ${fd(r.data.gewijzigd)}</span>${r.data.reden?`<p style="margin:4px 0;font-size:14px">Reden: ${esc(r.data.reden)}</p>`:""}<button class="sm" data-open="${r.id}">Toch weer actueel</button>${hist(r.data)}</div>`).join("")}</details>`:""}`;
  const M=$("main"),get=id=>items.find(r=>r.id===id),upd=async(r)=>{await q(sb.from("hd_items").update({data:r.data,updated_at:new Date().toISOString()}).eq("id",r.id))};
  M.querySelector("#tf").onsubmit=async e=>{e.preventDefault();const t=$("tt").value.trim();if(!t)return;await q(sb.from("hd_taken").insert({client_id:cur,tekst:t,wie:$("tw").value,datum:$("td").value||null}));vOverzicht()};
  M.onchange=async e=>{
@@ -269,10 +274,28 @@ async function vOverzicht(){
  M.onclick=async e=>{
   const b=e.target.closest("button");if(!b)return;
   if(b.dataset.top){const r=get(b.dataset.top);r.data.top=!r.data.top;await upd(r);vOverzicht()}
-  if(b.dataset.klaar){const r=get(b.dataset.klaar);r.data.status="klaar";r.data.top=false;await upd(r);toast("Naar Klaar");vOverzicht()}
-  if(b.dataset.open){const r=get(b.dataset.open);r.data.status="todo";await upd(r);vOverzicht()}
+  if(b.dataset.klaar){const r=get(b.dataset.klaar);r.data.status="klaar";r.data.top=false;logH(r.data,"Afgerond");await upd(r);toast("Naar Klaar");vOverzicht()}
+  if(b.dataset.open){const r=get(b.dataset.open);const was=STAT[r.data.status];r.data.status="todo";logH(r.data,`Teruggezet (was: ${was})`);await upd(r);vOverzicht()}
+  if(b.dataset.upd)updForm(get(b.dataset.upd),"upd");
+  if(b.dataset.verv)updForm(get(b.dataset.verv),"verv");
   if(b.dataset.edit)itemForm(b.dataset.edit==="new"?null:get(b.dataset.edit));
  };
+}
+function updForm(r,mode){
+ const i=r.data,verv=mode==="verv";
+ $("ef").innerHTML=`<div class="panel" style="margin-top:18px"><h2>${verv?"Niet meer actueel":"Er is iets veranderd"}: ${esc(i.wat)}</h2>
+ <p class="hint">${verv?"Het onderwerp gaat naar 'Niet meer actueel'. Je kunt het later terugzetten.":"Schrijf kort wat er nu anders is. De oude stand blijft bewaard in de geschiedenis."}</p>
+ <form id="uf" class="grid"><label class="full" for="ut">${verv?"Waarom niet meer actueel?":"Wat is er veranderd?"}<textarea id="ut" required></textarea></label>
+ ${verv?"":`<label for="uu">Hoe urgent nu?<select id="uu">${LANES.map(([k,n])=>`<option value="${k}" ${k===i.urg?"selected":""}>${n}</option>`).join("")}</select></label>
+ <label for="us">Status nu<select id="us">${Object.entries(STAT).filter(([k])=>k!=="vervallen").map(([k,n])=>`<option value="${k}" ${k===i.status?"selected":""}>${n}</option>`).join("")}</select></label>`}
+ <div class="row end full"><button type="button" id="ux">Annuleren</button><button class="main">Opslaan</button></div></form></div>`;
+ $("ef").scrollIntoView({behavior:"smooth"});$("ut").focus({preventScroll:true});
+ $("ux").onclick=()=>$("ef").innerHTML="";
+ $("uf").onsubmit=async e=>{e.preventDefault();const t=$("ut").value.trim();if(!t)return;
+  if(verv){i.status="vervallen";i.top=false;i.reden=t;logH(i,"Niet meer actueel: "+t)}
+  else{const parts=[t];if(i.stand)parts.push(`(eerder: ${i.stand})`);if($("uu").value!==i.urg)parts.push(`urgentie: ${LANES.find(l=>l[0]===$("uu").value)[1]}`);if($("us").value!==i.status)parts.push(`status: ${STAT[$("us").value]}`);
+   logH(i,parts.join(" "));i.stand=t;i.urg=$("uu").value;i.status=$("us").value;if(i.status==="klaar")i.top=false}
+  await q(sb.from("hd_items").update({data:i,updated_at:new Date().toISOString()}).eq("id",r.id));toast("Opgeslagen");vOverzicht()};
 }
 function itemForm(r){
  const i=r?r.data:{cat:"anders",urg:"maand",status:"todo",checks:[],oymb:"nee"};
@@ -293,7 +316,8 @@ function itemForm(r){
  $("if").onsubmit=async e=>{e.preventDefault();
   const old=Object.fromEntries((i.checks||[]).map(c=>[c.t,c.d]));
   const d={...i,wat:$("iw").value.trim(),cat:$("ic").value,wie:$("iwie").value.trim(),urg:$("iu").value,status:$("is").value,dl:$("idl").value,oymb:$("io").value,stand:$("ist").value.trim(),checks:$("ick").value.split("\n").map(t=>t.trim()).filter(Boolean).map(t=>({t,d:!!old[t]}))};
-  if(r)await q(sb.from("hd_items").update({data:d,updated_at:new Date().toISOString()}).eq("id",r.id));else await q(sb.from("hd_items").insert({client_id:cur,data:d}));
+  if(r){const ch=[];if(d.stand!==(i.stand||""))ch.push(`stand: ${d.stand}`+(i.stand?` (eerder: ${i.stand})`:""));if(d.status!==i.status)ch.push(`status: ${STAT[d.status]}`);if(d.urg!==i.urg)ch.push(`urgentie: ${LANES.find(l=>l[0]===d.urg)[1]}`);if(d.dl!==(i.dl||""))ch.push(`datum: ${d.dl?fd(d.dl):"geen"}`);if(d.wie!==(i.wie||""))ch.push(`naar: ${d.wie}`);if(ch.length)logH(d,ch.join("; "));
+   await q(sb.from("hd_items").update({data:d,updated_at:new Date().toISOString()}).eq("id",r.id))}else await q(sb.from("hd_items").insert({client_id:cur,data:d}));
   toast("Opgeslagen");vOverzicht()};
 }
 function confirmTwice(b){if(b.dataset.sure)return true;b.dataset.sure=1;const t=b.textContent;b.textContent="Zeker weten? Tik nog een keer";setTimeout(()=>{delete b.dataset.sure;b.textContent=t},4000);return false}
