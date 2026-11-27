@@ -121,7 +121,7 @@ const sb=supabase.createClient(SB_URL,SB_KEY);
 const BUCKET="herstel";
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const toast=m=>{const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("on"),2600)};
+const toast=m=>{const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("on"),Math.max(2600,m.length*60))};
 const q=async p=>{const {data,error}=await p;if(error){toast("Er ging iets mis: "+error.message);throw error}return data};
 const fd=d=>d?new Date(d).toLocaleDateString("nl-NL",{day:"numeric",month:"short",year:"numeric"}):"";
 const fdt=d=>d?new Date(d).toLocaleString("nl-NL",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"";
@@ -227,7 +227,7 @@ async function uitschrijven(id,again){
  toast("Spraakbericht wordt uitgeschreven…");
  const {data,error}=await sb.functions.invoke("herstel-ai",{body:{actie:"spraak",bestand_id:id}});
  if(error){let m="";try{m=(await error.context.json()).error}catch(e){}
-  toast(m==="geen_sleutel"?"Spraak naar tekst staat nog uit. Het spraakbericht is wel bewaard.":"Uitschrijven lukte niet. Probeer later 'Uitschrijven'.");return}
+  toast(m==="geen_sleutel"?"Je spraakbericht is opgeslagen. Uitschrijven naar tekst werkt pas als de OpenAI-sleutel in Supabase staat.":"Uitschrijven lukte niet. Probeer later 'Uitschrijven'.");return}
  toast(`Uitgeschreven en verwerkt${data.taken?`, ${data.taken} ${data.taken===1?"taak":"taken"} toegevoegd`:""}`);
  if(["dagboek","triggers","bestanden","overzicht"].includes(tab))show();
 }
@@ -443,7 +443,7 @@ async function vBestanden(){
  }
  fillMedia($("main"));
  if($("batt")){wireAttach($("batt"));$("bf").onsubmit=async e=>{e.preventDefault();if(!pending.length){toast("Kies eerst een bestand of spreek iets in");return}const b=e.target.querySelector(".main");b.disabled=true;
-  try{const note=$("bn").value.trim();for(const p of pending)p.note=note;await uploadAll(null,{caseId:$("bc").value||null});toast("Opgeslagen");vBestanden()}catch(err){b.disabled=false}}}
+  try{const note=$("bn").value.trim();for(const p of pending)p.note=note;await uploadAll(null,{caseId:$("bc").value||null});if(!pending.length)toast($("bc").value?"Opgeslagen in deze case":"Opgeslagen bij Losse documenten");vBestanden()}catch(err){b.disabled=false}}}
  const caseForm=c=>{$("cf").innerHTML=`<form id="cfm" class="grid panel" style="background:var(--lane);margin-top:12px">
   <label class="full" for="cn2">Naam van de case<input id="cn2" required value="${esc(c?.naam)}" placeholder="bijvoorbeeld: Woonbron"></label>
   <label class="full" for="co">Waar gaat het over?<textarea id="co">${esc(c?.omschrijving)}</textarea></label>
