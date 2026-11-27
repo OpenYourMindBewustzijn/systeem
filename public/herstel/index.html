@@ -183,14 +183,14 @@ function whoBar(){
  if($("csel"))$("csel").onchange=()=>{cur=$("csel").value;show()};
 }
 function nav(){
- const T=[["overzicht","Overzicht"],["dagboek",isBeg?"Dagboek":"Mijn dagboek"],["triggers","Triggers en herbelevingen"],["bestanden","Bestanden"]];
+ const T=[["overzicht","Overzicht"],["agenda","Agenda"],["dagboek",isBeg?"Dagboek":"Mijn dagboek"],["triggers","Triggers en herbelevingen"],["bestanden","Dossiers"],["verslagen","Verslagen"]];
  if(isBeg)T.push(["sessies","Sessies en rapportage"],["clienten","Cliënten"]);
  $("nav").innerHTML=T.map(([k,n])=>`<button data-tab="${k}" aria-current="${tab===k}">${n}</button>`).join("");
 }
 $("nav").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;tab=b.dataset.tab;nav();show()});
 function show(){stopRec();pending=[];
  if(!cur&&tab!=="clienten"){$("main").innerHTML='<div class="panel"><h2>Nog geen cliënten</h2><p>Voeg eerst een cliënt toe bij "Cliënten".</p></div>';return}
- ({overzicht:vOverzicht,dagboek:vDagboek,triggers:vTriggers,bestanden:vBestanden,sessies:vSessies,clienten:vClienten})[tab]();
+ ({overzicht:vOverzicht,agenda:vAgenda,verslagen:vVerslagen,dagboek:vDagboek,triggers:vTriggers,bestanden:vBestanden,sessies:vSessies,clienten:vClienten})[tab]();
 }
 
 /* ---------- spraak en bijlagen ---------- */
@@ -211,13 +211,13 @@ function wireAttach(box){
 }
 function stopRec(){if(rec){try{rec.stop()}catch(e){}}}
 const soortVan=m=>m?.startsWith("audio")?"spraak":m?.startsWith("image")?"afbeelding":/pdf|word|text|document/.test(m||"")?"document":"anders";
-async function uploadAll(dagId){
+async function uploadAll(dagId,opt={}){
  const spraak=[];
  for(const p of pending){
   const ext=(p.naam.split(".").pop()||"bin").toLowerCase().replace(/[^a-z0-9]/g,"");
   const pad=`${cur}/${uid()}.${ext}`;
   await q(sb.storage.from(BUCKET).upload(pad,p.blob,{contentType:p.mime||"application/octet-stream"}));
-  const [row]=await q(sb.from("hd_bestanden").insert({client_id:cur,pad,naam:p.naam,mime:p.mime,grootte:p.blob.size,soort:soortVan(p.mime),dagboek_id:dagId||null,notitie:p.note||null}).select("id,soort"));
+  const [row]=await q(sb.from("hd_bestanden").insert({client_id:cur,pad,naam:p.naam,mime:p.mime,grootte:p.blob.size,soort:soortVan(p.mime),dagboek_id:dagId||null,notitie:p.note||null,map:opt.map||"overig",afspraak_id:opt.afspraak||null}).select("id,soort"));
   if(row.soort==="spraak")spraak.push(row.id);
  }
  pending=[];
@@ -241,7 +241,7 @@ const media=f=>f.soort==="spraak"?`<audio controls preload="none" data-pad="${es
 
 /* ---------- overzicht ---------- */
 async function vOverzicht(){
- const [items,taken]=await Promise.all([q(sb.from("hd_items").select("*").eq("client_id",cur)),q(sb.from("hd_taken").select("*").eq("client_id",cur).order("created_at"))]);
+ const [items,taken,afs]=await Promise.all([q(sb.from("hd_items").select("*").eq("client_id",cur)),q(sb.from("hd_taken").select("*").eq("client_id",cur).order("created_at")),q(sb.from("hd_afspraken").select("id,titel,start,plaats").eq("client_id",cur).gte("start",new Date(Date.now()-36e5).toISOString()).order("start").limit(3))]);
  const open=items.filter(i=>!["klaar","vervallen"].includes(i.data.status)),done=items.filter(i=>i.data.status==="klaar"),verv=items.filter(i=>i.data.status==="vervallen");
  const recent=d=>d.gewijzigd&&(Date.now()-new Date(d.gewijzigd))<7*864e5;
  const hist=i=>(i.historie||[]).length?`<details style="margin-top:6px"><summary style="cursor:pointer;font-size:14px;font-weight:700">Geschiedenis (${i.historie.length})</summary>${[...i.historie].reverse().map(h=>`<p style="font-size:14px;margin:4px 0"><b>${fd(h.op)}</b> • ${esc(h.door)}: ${esc(h.wat)}</p>`).join("")}</details>`:"";
@@ -255,6 +255,7 @@ async function vOverzicht(){
  const tops=open.filter(r=>r.data.top).sort(ord);
  $("main").innerHTML=`
  ${tops.length?`<div class="panel" style="background:var(--claybg);border-color:transparent"><h2 style="color:var(--clay)">Top 3</h2><ol style="margin:0;padding-left:22px">${tops.map(r=>`<li><b>${esc(r.data.wat)}</b> <span class="note">${esc(r.data.wie||"")}</span> ${dlTag(r.data.dl)}</li>`).join("")}</ol></div>`:""}
+ ${afs.length?`<div class="panel"><h2>Eerstvolgende afspraken</h2>${afs.map(a=>`<p style="margin:4px 0"><b>${new Date(a.start).toLocaleString("nl-NL",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</b> • ${esc(a.titel)}${a.plaats?" • "+esc(a.plaats):""}</p>`).join("")}</div>`:""}
  <div class="panel"><h2>Dingen te regelen</h2>
   <form id="tf" class="row"><input id="tt" placeholder="Wat moet er geregeld worden?" aria-label="Wat moet er geregeld worden?" style="flex:1 1 220px;width:auto"><select id="tw" aria-label="Wie" style="width:auto"><option>${esc(isBeg?C()?.naam:"Ik")}</option><option>Wendy</option><option>Iemand anders</option></select><input id="td" type="date" aria-label="Datum" style="width:auto"><button class="main">Toevoegen</button></form>
   <div style="display:grid;gap:6px;margin-top:10px">${taken.filter(t=>!t.klaar).map(t=>`<label class="check" style="border:1px solid var(--line);border-radius:12px;padding:8px 12px"><input type="checkbox" data-tk="${t.id}"><span>${esc(t.tekst)} <small style="color:var(--soft);font-weight:400">${esc(t.wie||"")}${t.datum?" • "+fd(t.datum):""}</small></span></label>`).join("")||'<p class="hint">Niets te regelen.</p>'}</div>
@@ -409,18 +410,104 @@ async function vTriggers(){
 }
 
 /* ---------- bestanden ---------- */
+const MAPS={...CATS};
 async function vBestanden(){
  const files=await q(sb.from("hd_bestanden").select("*").eq("client_id",cur).order("created_at",{ascending:false}));
- $("main").innerHTML=`<div class="panel"><h2>Bestand of spraakbericht toevoegen</h2><p class="hint">Bijvoorbeeld een brief (PDF of Word), een foto van een brief of een spraakbericht. Maximaal 50 MB per bestand.</p>
- <form id="bf" class="grid"><label class="full" for="bn">Waar gaat het over? <small>optioneel</small><input id="bn"></label>${attachUI("batt")}
+ const filt=window._map||"alle";
+ const used=Object.keys(MAPS).filter(k=>files.some(f=>(f.map||"overig")===k||(k==="anders"&&(f.map||"overig")==="overig")));
+ const mapOf=f=>MAPS[f.map]?f.map:"anders";
+ const fileRow=f=>`<div class="file"><span class="n">${esc(f.naam)}</span><span class="note">${fd(f.created_at)}${f.notitie?" • "+esc(f.notitie):""}${f.dagboek_id?" • bij dagboek":""}${f.afspraak_id?" • bij afspraak":""}</span>${f.soort==="spraak"?media(f):`<a class="sm" data-pad="${esc(f.pad)}" target="_blank" rel="noopener">Openen</a>`}
+  <select data-fmap="${f.id}" aria-label="Map" style="width:auto;padding:6px 8px;font-size:14px">${Object.entries(MAPS).map(([k,v])=>`<option value="${k}" ${k===mapOf(f)?"selected":""}>${v}</option>`).join("")}</select>
+  ${f.soort==="spraak"&&f.ai_status!=="klaar"?`<button class="sm" data-uit="${f.id}">${f.ai_status==="bezig"?"Bezig… opnieuw":"Uitschrijven"}</button>`:""}${f.transcript?`<details style="flex-basis:100%"><summary style="cursor:pointer;font-weight:700">Uitgeschreven tekst</summary><p style="white-space:pre-wrap;margin:6px 0">${esc(f.transcript)}</p>${f.verslag?.samenvatting?`<p><b>Samenvatting:</b> ${esc(f.verslag.samenvatting)}</p>`:""}</details>`:""}${f.created_by===me.id?`<button class="sm danger" data-fdel="${f.id}">Verwijderen</button>`:""}</div>`;
+ const groups=Object.entries(MAPS).map(([k,v])=>[k,v,files.filter(f=>mapOf(f)===k)]).filter(g=>g[2].length&&(filt==="alle"||filt===g[0]));
+ $("main").innerHTML=`<div class="panel"><h2>Document of spraakbericht toevoegen</h2><p class="hint">Brieven (PDF of Word), foto's van brieven of spraakberichten. Kies in welk dossier het hoort. Maximaal 50 MB per bestand.</p>
+ <form id="bf" class="grid"><label for="bm">Dossier<select id="bm">${Object.entries(MAPS).map(([k,v])=>`<option value="${k}" ${k===(filt==="alle"?"anders":filt)?"selected":""}>${v}</option>`).join("")}</select></label><label for="bn">Waar gaat het over? <small>optioneel</small><input id="bn"></label>${attachUI("batt")}
  <div class="row end full"><button class="main">Opslaan</button></div></form></div>
- <div class="panel"><h2>Alle bestanden</h2><div class="files">${files.map(f=>`<div class="file"><span class="n">${esc(f.naam)}</span><span class="note">${fd(f.created_at)}${f.notitie?" • "+esc(f.notitie):""}${f.dagboek_id?" • bij dagboek":""}</span>${f.soort==="spraak"?media(f):`<a class="sm" data-pad="${esc(f.pad)}" target="_blank" rel="noopener">Openen</a>`}${f.soort==="spraak"&&f.ai_status!=="klaar"?`<button class="sm" data-uit="${f.id}">${f.ai_status==="bezig"?"Bezig… opnieuw":"Uitschrijven"}</button>`:""}${f.transcript?`<details style="flex-basis:100%"><summary style="cursor:pointer;font-weight:700">Uitgeschreven tekst</summary><p style="white-space:pre-wrap;margin:6px 0">${esc(f.transcript)}</p>${f.verslag?.samenvatting?`<p><b>Samenvatting:</b> ${esc(f.verslag.samenvatting)}</p>`:""}</details>`:""}${f.created_by===me.id?`<button class="sm danger" data-fdel="${f.id}">Verwijderen</button>`:""}</div>`).join("")||'<p class="hint">Nog geen bestanden.</p>'}</div></div>`;
+ <div class="panel"><h2>Dossiers</h2><div class="seg" style="margin-bottom:12px"><button class="sm" data-fm="alle" aria-pressed="${filt==="alle"}">Alles (${files.length})</button>${Object.entries(MAPS).filter(([k])=>files.some(f=>mapOf(f)===k)).map(([k,v])=>`<button class="sm" data-fm="${k}" aria-pressed="${filt===k}">${v} (${files.filter(f=>mapOf(f)===k).length})</button>`).join("")}</div>
+ ${groups.map(([k,v,L])=>`<h3 style="font-size:19px;margin:16px 0 8px">${v}</h3><div class="files">${L.map(fileRow).join("")}</div>`).join("")||'<p class="hint">Nog geen documenten.</p>'}</div>`;
  fillMedia($("main"));wireAttach($("batt"));
  $("bf").onsubmit=async e=>{e.preventDefault();if(!pending.length){toast("Kies eerst een bestand of spreek iets in");return}const b=e.target.querySelector(".main");b.disabled=true;
-  try{const note=$("bn").value.trim(),n=pending.length;for(const p of pending)p.note=note;
-   const ids=[];await uploadAll(null);if(note){const last=await q(sb.from("hd_bestanden").select("id").eq("client_id",cur).eq("created_by",me.id).order("created_at",{ascending:false}).limit(n));await q(sb.from("hd_bestanden").update({notitie:note}).in("id",last.map(x=>x.id)))}
-   toast("Opgeslagen");vBestanden()}catch(err){b.disabled=false}};
- $("main").onclick=async e=>{const u=e.target.closest("[data-uit]");if(u){u.disabled=true;await uitschrijven(u.dataset.uit);return}const b=e.target.closest("[data-fdel]");if(!b)return;if(!confirmTwice(b))return;const f=files.find(x=>x.id===b.dataset.fdel);await q(sb.storage.from(BUCKET).remove([f.pad]));await q(sb.from("hd_bestanden").delete().eq("id",f.id));vBestanden()};
+  try{const note=$("bn").value.trim();for(const p of pending)p.note=note;await uploadAll(null,{map:$("bm").value});toast("Opgeslagen");vBestanden()}catch(err){b.disabled=false}};
+ $("main").onchange=async e=>{const id=e.target.dataset.fmap;if(id){await q(sb.from("hd_bestanden").update({map:e.target.value}).eq("id",id));toast("Verplaatst");vBestanden()}};
+ $("main").onclick=async e=>{const m=e.target.closest("[data-fm]");if(m){window._map=m.dataset.fm;vBestanden();return}const u=e.target.closest("[data-uit]");if(u){u.disabled=true;await uitschrijven(u.dataset.uit);return}const b=e.target.closest("[data-fdel]");if(!b)return;if(!confirmTwice(b))return;const f=files.find(x=>x.id===b.dataset.fdel);await q(sb.storage.from(BUCKET).remove([f.pad]));await q(sb.from("hd_bestanden").delete().eq("id",f.id));vBestanden()};
+}
+
+/* ---------- agenda ---------- */
+const local=d=>{const x=new Date(d);return new Date(x-x.getTimezoneOffset()*6e4).toISOString().slice(0,16)};
+function ics(a){
+ const f=d=>new Date(d).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
+ const e=t=>String(t||"").replace(/[\\,;]/g,m=>"\\"+m).replace(/\n/g,"\\n");
+ const end=a.eind||new Date(new Date(a.start).getTime()+36e5).toISOString();
+ const txt=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//OYMB//Herstel//NL","BEGIN:VEVENT","UID:"+a.id+"@oymb","DTSTAMP:"+f(new Date()),"DTSTART:"+f(a.start),"DTEND:"+f(end),"SUMMARY:"+e(a.titel),"LOCATION:"+e(a.plaats),"DESCRIPTION:"+e([a.met_wie?"Met: "+a.met_wie:"",a.voorbereiden?"Voorbereiden: "+a.voorbereiden:""].filter(Boolean).join("\n")),"BEGIN:VALARM","TRIGGER:-PT2H","ACTION:DISPLAY","DESCRIPTION:Herinnering","END:VALARM","END:VEVENT","END:VCALENDAR"].join("\r\n");
+ const url=URL.createObjectURL(new Blob([txt],{type:"text/calendar"}));const l=document.createElement("a");l.href=url;l.download=(a.titel||"afspraak").replace(/[^\w\- ]/g,"")+".ics";document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);
+}
+async function vAgenda(){
+ const [afs,items,files]=await Promise.all([q(sb.from("hd_afspraken").select("*").eq("client_id",cur).order("start")),q(sb.from("hd_items").select("id,data").eq("client_id",cur)),q(sb.from("hd_bestanden").select("*").eq("client_id",cur).not("afspraak_id","is",null))]);
+ const now=Date.now(),kom=afs.filter(a=>new Date(a.eind||a.start).getTime()>=now-36e5),gew=afs.filter(a=>!kom.includes(a)).reverse();
+ const iname=id=>items.find(i=>i.id===id)?.data?.wat;
+ const dagen=d=>{const n=Math.round((new Date(new Date(d).toDateString())-new Date(new Date().toDateString()))/864e5);return n===0?"Vandaag":n===1?"Morgen":n>1?`Over ${n} dagen`:""};
+ const card=a=>{const fs=files.filter(f=>f.afspraak_id===a.id);return `<div class="entry"><div class="row"><div style="flex:1"><b style="font-size:17px">${esc(a.titel)}</b><div class="m">${new Date(a.start).toLocaleString("nl-NL",{weekday:"long",day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"})}${dagen(a.start)?" • <b>"+dagen(a.start)+"</b>":""}</div></div></div>
+  <dl>${[["Waar",a.plaats],["Met wie",a.met_wie],["Onderwerp",iname(a.item_id)],["Voorbereiden",a.voorbereiden]].filter(x=>x[1]).map(x=>`<dt>${x[0]}</dt><dd>${esc(x[1])}</dd>`).join("")}</dl>
+  ${a.verslag?`<div class="plan"><h3>Verslag van het gesprek</h3><div style="white-space:pre-wrap">${esc(a.verslag)}</div></div>`:""}
+  ${fs.length?`<div class="files" style="margin-top:8px">${fs.map(media).join("")}</div>`:""}
+  <div class="row" style="margin-top:8px"><button class="sm" data-aed="${a.id}">Aanpassen</button><button class="sm" data-aver="${a.id}">${a.verslag?"Verslag aanvullen":"Verslag maken"}</button><button class="sm" data-aics="${a.id}">In mijn agenda zetten</button><button class="sm danger" data-adel="${a.id}">Verwijderen</button></div></div>`};
+ $("main").innerHTML=`<div class="row" style="margin-bottom:12px"><h2 style="font-size:26px;flex:1">Agenda</h2><button class="main" data-anew>+ Nieuwe afspraak</button></div><div id="af2"></div>
+ <div class="panel"><h2>Komende afspraken</h2>${kom.map(card).join("")||'<p class="hint">Geen afspraken gepland.</p>'}</div>
+ <div class="panel"><h2>Geweest</h2>${gew.map(card).join("")||'<p class="hint">Nog niets.</p>'}</div>`;
+ fillMedia($("main"));
+ const form=(a,verslag)=>{
+  $("af2").innerHTML=`<div class="panel"><h2>${verslag?"Verslag: "+esc(a.titel):a?"Afspraak aanpassen":"Nieuwe afspraak"}</h2><form id="agf" class="grid">
+  ${verslag?`<label class="full" for="av">Wat is er besproken en afgesproken?<textarea id="av" style="min-height:160px">${esc(a.verslag)}</textarea></label><label class="full" for="avt">Wat moet er nu geregeld worden? <small>één per regel, komt bij Dingen te regelen</small><textarea id="avt"></textarea></label>${attachUI("aatt")}<p class="note full">Spreek je het verslag in? Dan wordt het uitgeschreven en bij deze afspraak gezet.</p>`:
+  `<label class="full" for="at">Wat voor afspraak?<input id="at" required value="${esc(a?.titel)}" placeholder="bijvoorbeeld: afspraak Antes"></label>
+  <label for="as">Begint<input id="as" type="datetime-local" required value="${a?local(a.start):""}"></label>
+  <label for="ae2">Eindigt <small>optioneel</small><input id="ae2" type="datetime-local" value="${a?.eind?local(a.eind):""}"></label>
+  <label for="ap2">Waar?<input id="ap2" value="${esc(a?.plaats)}"></label>
+  <label for="aw">Met wie?<input id="aw" value="${esc(a?.met_wie)}"></label>
+  <label class="full" for="ai">Hoort bij onderwerp<select id="ai"><option value="">Geen</option>${items.filter(i=>!["klaar","vervallen"].includes(i.data.status)).map(i=>`<option value="${i.id}" ${i.id===a?.item_id?"selected":""}>${esc(i.data.wat)}</option>`).join("")}</select></label>
+  <label class="full" for="avb">Wat wil ik voorbereiden of vragen?<textarea id="avb">${esc(a?.voorbereiden)}</textarea></label>`}
+  <div class="row end full"><button type="button" id="acx">Annuleren</button><button class="main">Opslaan</button></div></form></div>`;
+  $("af2").scrollIntoView({behavior:"smooth"});$("acx").onclick=()=>$("af2").innerHTML="";
+  if(verslag)wireAttach($("aatt"));
+  $("agf").onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector(".main");b.disabled=true;
+   try{if(verslag){await q(sb.from("hd_afspraken").update({verslag:$("av").value.trim()}).eq("id",a.id));
+     const T=$("avt").value.split("\n").map(t=>t.trim()).filter(Boolean);if(T.length)await q(sb.from("hd_taken").insert(T.map(t=>({client_id:cur,tekst:t,wie:"Nog bepalen",bron:"afspraak "+fd(a.start)}))));
+     await uploadAll(null,{afspraak:a.id,map:items.find(i=>i.id===a.item_id)?.data?.cat||"anders"})}
+    else{const d={titel:$("at").value.trim(),start:new Date($("as").value).toISOString(),eind:$("ae2").value?new Date($("ae2").value).toISOString():null,plaats:$("ap2").value.trim(),met_wie:$("aw").value.trim(),item_id:$("ai").value||null,voorbereiden:$("avb").value.trim()};
+     if(a)await q(sb.from("hd_afspraken").update(d).eq("id",a.id));else await q(sb.from("hd_afspraken").insert({client_id:cur,...d}))}
+    toast("Opgeslagen");vAgenda()}catch(err){b.disabled=false}};
+ };
+ $("main").onclick=async e=>{const b=e.target.closest("button");if(!b)return;const a=afs.find(x=>x.id===(b.dataset.aed||b.dataset.aver||b.dataset.aics||b.dataset.adel));
+  if(b.hasAttribute("data-anew"))form(null);if(b.dataset.aed)form(a);if(b.dataset.aver)form(a,true);if(b.dataset.aics)ics(a);
+  if(b.dataset.adel){if(!confirmTwice(b))return;await q(sb.from("hd_afspraken").delete().eq("id",a.id));vAgenda()}};
+}
+
+/* ---------- verslagen ---------- */
+const VS={gesprek:"Gespreksverslag",sessie:"Sessie of rapportage",brief:"Brief of mail (samenvatting)",zorg:"Zorg en behandeling",overig:"Overig"};
+async function vVerslagen(){
+ const [vs,afs]=await Promise.all([q(sb.from("hd_verslagen").select("*").eq("client_id",cur).order("datum",{ascending:false})),q(sb.from("hd_afspraken").select("id,titel,start,verslag").eq("client_id",cur).not("verslag","is",null).order("start",{ascending:false}))]);
+ const all=[...vs.map(v=>({...v,k:"v"})),...afs.filter(a=>a.verslag).map(a=>({id:a.id,k:"a",titel:"Gesprek: "+a.titel,soort:"gesprek",datum:a.start,tekst:a.verslag,zichtbaar_client:true}))].sort((a,b)=>new Date(b.datum)-new Date(a.datum));
+ const filt=window._vs||"alle";
+ $("main").innerHTML=`<div class="row" style="margin-bottom:12px"><h2 style="font-size:26px;flex:1">Verslagen</h2><button class="main" data-vnew>+ Nieuw verslag</button></div><div id="vf"></div>
+ <div class="seg" style="margin-bottom:12px"><button class="sm" data-vf="alle" aria-pressed="${filt==="alle"}">Alles (${all.length})</button>${Object.entries(VS).filter(([k])=>all.some(v=>v.soort===k)).map(([k,n])=>`<button class="sm" data-vf="${k}" aria-pressed="${filt===k}">${n} (${all.filter(v=>v.soort===k).length})</button>`).join("")}</div>
+ ${all.filter(v=>filt==="alle"||v.soort===filt).map(v=>`<details class="entry"><summary style="cursor:pointer"><b>${esc(v.titel)}</b> <span class="note">${fd(v.datum)} • ${VS[v.soort]||v.soort}${isBeg&&v.k==="v"&&!v.zichtbaar_client?" • alleen voor Wendy":""}</span></summary>
+  <div style="white-space:pre-wrap;margin-top:8px">${esc(v.tekst)}</div>
+  <div class="row" style="margin-top:8px"><button class="sm" data-vcopy="${v.id}">Kopieer</button>${v.k==="v"&&(isBeg||v.created_by===me.id)?`<button class="sm" data-ved="${v.id}">Aanpassen</button><button class="sm danger" data-vdel="${v.id}">Verwijderen</button>`:""}${v.k==="a"?'<span class="note">Aanpassen via Agenda</span>':""}</div></details>`).join("")||'<p class="hint">Nog geen verslagen.</p>'}`;
+ const form=v=>{$("vf").innerHTML=`<div class="panel"><h2>${v?"Verslag aanpassen":"Nieuw verslag"}</h2><form id="vfm" class="grid">
+  <label class="full" for="vt">Titel<input id="vt" required value="${esc(v?.titel)}"></label>
+  <label for="vso">Soort<select id="vso">${Object.entries(VS).map(([k,n])=>`<option value="${k}" ${k===(v?.soort||"gesprek")?"selected":""}>${n}</option>`).join("")}</select></label>
+  <label for="vd">Datum<input id="vd" type="date" value="${esc(v?.datum||new Date().toISOString().slice(0,10))}"></label>
+  <label class="full" for="vx">Tekst<textarea id="vx" style="min-height:220px">${esc(v?.tekst)}</textarea></label>
+  ${isBeg?`<label class="check full"><input type="checkbox" id="vz" ${v?(v.zichtbaar_client?"checked":""):"checked"}>Elly mag dit verslag zien</label>`:""}
+  <div class="row end full"><button type="button" id="vcx">Annuleren</button><button class="main">Opslaan</button></div></form></div>`;
+  $("vf").scrollIntoView({behavior:"smooth"});$("vcx").onclick=()=>$("vf").innerHTML="";
+  $("vfm").onsubmit=async e=>{e.preventDefault();const d={titel:$("vt").value.trim(),soort:$("vso").value,datum:$("vd").value,tekst:$("vx").value,zichtbaar_client:isBeg?$("vz").checked:true};
+   if(v)await q(sb.from("hd_verslagen").update(d).eq("id",v.id));else await q(sb.from("hd_verslagen").insert({client_id:cur,...d}));toast("Opgeslagen");vVerslagen()}};
+ $("main").onclick=async e=>{const b=e.target.closest("button");if(!b)return;
+  if(b.dataset.vf){window._vs=b.dataset.vf;vVerslagen();return}
+  if(b.hasAttribute("data-vnew"))form(null);
+  if(b.dataset.ved)form(vs.find(x=>x.id===b.dataset.ved));
+  if(b.dataset.vcopy){const v=all.find(x=>x.id===b.dataset.vcopy);try{await navigator.clipboard.writeText(v.titel+"\n"+fd(v.datum)+"\n\n"+v.tekst);toast("Gekopieerd")}catch(err){toast("Kopiëren lukt hier niet")}}
+  if(b.dataset.vdel){if(!confirmTwice(b))return;await q(sb.from("hd_verslagen").delete().eq("id",b.dataset.vdel));vVerslagen()}};
 }
 
 /* ---------- sessies en rapportage (begeleider) ---------- */
@@ -444,7 +531,7 @@ async function vSessies(){
   <label class="full" for="s8">Te regelen na deze sessie <small>één per regel</small><textarea id="s8"></textarea></label>
   <div class="row end full"><button class="main">Sessie opslaan</button></div></form></div>
  <div class="panel"><h2>Sessies</h2>${ses.map(s=>`<div class="entry"><div class="row"><b style="flex:1">${fd(s.datum)} • ${s.soort==="trauma"?"Traumasessie":"Persoonlijke sessie"} • ${s.duur} uur</b><span>${eur(s.bedrag)}</span><button class="sm danger" data-sdel="${s.id}">Verwijderen</button></div><dl>${[["Gedaan",s.gedaan],["Gezien",s.waarneming],["Cliënt vertelt",s.client_vertelt]].filter(x=>x[1]).map(x=>`<dt>${x[0]}</dt><dd>${esc(x[1])}</dd>`).join("")}</dl></div>`).join("")||'<p class="hint">Nog geen sessies.</p>'}</div>
- <div class="panel"><h2>Rapportage</h2><div class="row" style="margin-bottom:10px"><label for="rv" style="flex-direction:row;align-items:center;gap:6px">Van<input id="rv" type="date" style="width:auto"></label><label for="rt" style="flex-direction:row;align-items:center;gap:6px">Tot<input id="rt" type="date" style="width:auto"></label><button class="sm" id="rm">Maak rapportage</button><button class="sm" id="rai">Laat AI het netjes uitschrijven</button><button class="sm main" id="rk">Kopieer</button></div>
+ <div class="panel"><h2>Rapportage</h2><div class="row" style="margin-bottom:10px"><label for="rv" style="flex-direction:row;align-items:center;gap:6px">Van<input id="rv" type="date" style="width:auto"></label><label for="rt" style="flex-direction:row;align-items:center;gap:6px">Tot<input id="rt" type="date" style="width:auto"></label><button class="sm" id="rm">Maak rapportage</button><button class="sm" id="rai">Laat AI het netjes uitschrijven</button><button class="sm" id="rsave">Bewaar bij Verslagen</button><button class="sm main" id="rk">Kopieer</button></div>
  <textarea id="rx" style="min-height:280px" aria-label="Rapportage"></textarea><p class="note">Controleer de tekst zelf. Deel alleen met toestemming van de cliënt.</p></div>`;
  $("budf").onsubmit=async e=>{e.preventDefault();await q(sb.from("hd_budget").upsert({client_id:cur,totaal:+$("bt").value||0,eerder:+$("be").value||0,tarief:+$("br").value||0,updated_at:new Date().toISOString()}));toast("Bewaard");vSessies()};
  $("sf").onsubmit=async e=>{e.preventDefault();const duur=+$("s3").value||0;
@@ -471,6 +558,7 @@ async function vSessies(){
   b.disabled=false;b.textContent="Laat AI het netjes uitschrijven";
   if(error){let m="";try{m=(await error.context.json()).error}catch(e){}toast(m==="geen_sleutel"?"AI staat nog uit: zet eerst de sleutel in Supabase.":"Uitschrijven lukte niet");return}
   $("rx").value=data.tekst};
+ $("rsave").onclick=async()=>{if(!$("rx").value.trim()){toast("Maak eerst een rapportage");return}await q(sb.from("hd_verslagen").insert({client_id:cur,titel:"Rapportage begeleiding "+new Date().toLocaleDateString("nl-NL"),soort:"sessie",tekst:$("rx").value,zichtbaar_client:false}));toast("Bewaard bij Verslagen (alleen voor jou)")};
  $("rk").onclick=async()=>{try{await navigator.clipboard.writeText($("rx").value);toast("Gekopieerd")}catch(e){$("rx").select();toast("Selecteer en kopieer de tekst")}};
 }
 
