@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Van onrust naar overzicht</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap" rel="stylesheet">
+<style>
+/* VOICE calm, kind, for someone under stress; plain words
+   IDEA a quiet notebook with tabs: overzicht, dagboek, triggers, bestanden (and for the begeleider: sessies)
+   PICTURE the working view itself: cards, diary entries, trigger history bars
+   COLOUR sage green leads, white ground, warm clay for "nu" and high intensity
+   TYPE Outfit + Nunito Sans
+   LAYOUT green top band with tabs, one content column up to 1100px; stacks on phone */
+:root{color-scheme:light dark;--bg:light-dark(#ffffff,#121a14);--ink:light-dark(#1d2a20,#e6efe7);--soft:light-dark(#5b6d5f,#a9bcac);--green:light-dark(#3f6b4a,#7fb08b);--band:light-dark(#3f6b4a,#1d2e22);--lane:light-dark(#eef4ec,#18241b);--card:light-dark(#ffffff,#1f2d23);--line:light-dark(#cfdccc,#2f4234);--clay:light-dark(#c0562a,#e98a5c);--claybg:light-dark(#fbeee6,#3a2419);--sun:light-dark(#9a7414,#e0bb52);--sunbg:light-dark(#fbf4dd,#332b14)}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 "Nunito Sans",system-ui,sans-serif;overflow-x:clip}
+h1,h2,h3{font-family:Outfit,system-ui,sans-serif;letter-spacing:-.02em;line-height:1.15;margin:0}
+header{background:var(--band);color:#f3f8f2;padding:18px max(4vw,16px) 0}
+.top{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;justify-content:space-between;max-width:1100px;margin:0 auto}
+header h1{font-size:clamp(24px,4vw,34px)}
+.who{font-size:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.who select{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.4)}
+.who select option{color:#1d2a20}
+.who button{background:transparent;color:#fff;border-color:rgba(255,255,255,.5)}
+nav{display:flex;gap:4px;overflow-x:auto;max-width:1100px;margin:14px auto 0}
+nav button{flex:none;background:transparent;color:#e6f0e5;border:0;border-radius:12px 12px 0 0;white-space:nowrap}
+nav button[aria-current=true]{background:var(--bg);color:var(--ink)}
+main{padding:22px max(4vw,16px) 60px;max-width:1100px;margin:0 auto}
+button{font:600 15px "Nunito Sans",sans-serif;min-height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--green)}
+button:disabled{opacity:.6;cursor:default}
+button.main{background:var(--green);border-color:var(--green);color:#fff}
+button.sm{min-height:34px;padding:0 12px;font-size:14px}
+button.danger{color:var(--clay)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--green);outline-offset:2px}
+input,textarea,select{font:16px "Nunito Sans",sans-serif;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+textarea{min-height:80px;resize:vertical}
+label{display:flex;flex-direction:column;gap:5px;font-weight:700;font-size:15px}
+label small{font-weight:400;color:var(--soft);font-size:13px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:clamp(16px,2.5vw,24px);margin-bottom:18px}
+.panel h2{font-size:24px;margin-bottom:6px}
+.hint{color:var(--soft);font-size:14px;margin:0 0 12px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.full{grid-column:1/-1}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.row.end{justify-content:flex-end}
+.check{flex-direction:row;align-items:center;gap:10px;font-weight:600}
+.check input{width:22px;height:22px;accent-color:var(--green)}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button[aria-pressed=true]{background:var(--green);border-color:var(--green);color:#fff}
+.lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+.lane{background:var(--lane);border-radius:16px;padding:12px;display:grid;gap:10px}
+.lane h3{font-size:19px;display:flex;justify-content:space-between}
+.lane.nu h3{color:var(--clay)}.lane.maand h3{color:var(--sun)}.lane.wacht h3{color:var(--green)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.lane.nu .card{border-left:4px solid var(--clay)}
+.card h4{font:700 17px Outfit,sans-serif;margin:0 0 4px}
+.card p{margin:4px 0;font-size:14px}
+.card ul{list-style:none;margin:8px 0;padding:0;display:grid;gap:4px}
+.card li label{flex-direction:row;align-items:flex-start;gap:8px;font-weight:400;font-size:14px}
+.card li input{width:18px;height:18px;margin-top:2px;accent-color:var(--green);flex:none}
+.card li.d span{text-decoration:line-through;color:var(--soft)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tag{font-size:13px;font-weight:700;padding:2px 10px;border-radius:99px;background:var(--lane);color:var(--green);white-space:nowrap}
+.tag.late{background:var(--claybg);color:var(--clay)}
+.tag.oymb{background:var(--green);color:#fff}
+.to{font-size:14px;color:var(--green);font-weight:700}
+.entry{border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin-bottom:10px;background:var(--card)}
+.entry .m{font-size:14px;color:var(--soft)}
+.entry dl{margin:6px 0 0;display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:4px 12px;font-size:15px}
+.entry dt{color:var(--soft)}.entry dd{margin:0;white-space:pre-wrap}
+.mood{display:flex;flex-wrap:wrap;gap:6px}
+.mood button[aria-pressed=true]{background:var(--green);color:#fff;border-color:var(--green)}
+.int{display:flex;align-items:center;gap:12px}
+.int output{font:700 28px Outfit,sans-serif;width:2.2em;text-align:right}
+.bars{display:grid;gap:4px;margin-top:8px}
+.bars div{display:grid;grid-template-columns:6.5em minmax(0,1fr) 2em;gap:8px;align-items:center;font-size:13px}
+.bars i{display:block;height:12px;border-radius:6px;background:var(--green)}
+.bars i.h{background:var(--clay)}
+.plan{background:var(--lane);border-radius:14px;padding:12px 16px;border-left:5px solid var(--green);margin:8px 0}
+.plan h3{font-size:17px;margin-bottom:4px}
+.files{display:grid;gap:8px}
+.file{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.file .n{flex:1 1 200px;font-weight:700;overflow-wrap:anywhere}
+.file audio{width:100%;max-width:320px}
+.rec{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.rec .dot{width:12px;height:12px;border-radius:50%;background:var(--clay);animation:p 1s infinite}
+@keyframes p{50%{opacity:.3}}
+.pending{font-size:14px;color:var(--soft)}
+.auth{max-width:420px;margin:40px auto}
+.big{font:700 clamp(28px,4vw,38px)/1 Outfit,sans-serif;white-space:nowrap}
+.bar{display:flex;height:26px;border-radius:10px;overflow:hidden;background:var(--lane);border:1px solid var(--line)}
+.bar i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:14px;margin-top:8px}
+.dotc{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:12px;font-weight:700;opacity:0;pointer-events:none;transition:opacity .3s;max-width:90vw;z-index:9}
+.toast.on{opacity:1}
+.note{font-size:13px;color:var(--soft)}
+@media(max-width:760px){.lanes,.grid{grid-template-columns:minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){.rec .dot{animation:none}}
+</style>
+</head>
+<body>
+<header>
+ <div class="top"><h1>Van onrust naar overzicht</h1><div class="who" id="who"></div></div>
+ <nav id="nav" aria-label="Onderdelen"></nav>
+</header>
+<main id="main"><p class="hint">Laden…</p></main>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+{
+const SB_URL="https://euvwpdmrbsjqkluaeqpi.supabase.co";
+const SB_KEY="sb_publishable_wVoqjZAfae3OO715_wIN5w_KbGytRMC";
+const sb=supabase.createClient(SB_URL,SB_KEY);
+const BUCKET="herstel";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const toast=m=>{const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("on"),2600)};
+const q=async p=>{const {data,error}=await p;if(error){toast("Er ging iets mis: "+error.message);throw error}return data};
+const fd=d=>d?new Date(d).toLocaleDateString("nl-NL",{day:"numeric",month:"short",year:"numeric"}):"";
+const fdt=d=>d?new Date(d).toLocaleString("nl-NL",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"";
+const eur=n=>"€ "+(Math.round((+n||0)*100)/100).toLocaleString("nl-NL",{maximumFractionDigits:2});
+const uid=()=>crypto.randomUUID();
+
+const CATS={herstel:"Hersteloperatie toeslagen",wonen:"Wonen en verhuurder",recht:"Rechtszaak of juridische brief",geld:"Geld en schulden",wmo:"Gemeente en Wmo",klacht:"Klachten",veilig:"Veiligheid en bedreiging",zorg:"Zorg en gezondheid",rust:"Spanning, rust en herstel",regie:"Overzicht over alle instanties",schade:"Losse schadeclaims",post:"Post en administratie",anders:"Iets anders"};
+const LANES=[["nu","Nu"],["maand","Deze maand"],["wacht","Kan wachten"]];
+const STAT={todo:"Te doen",bezig:"Bezig",wacht:"Wacht op antwoord",klaar:"Klaar"};
+const MOOD=["Heel zwaar","Zwaar","Gaat wel","Goed","Heel goed"];
+
+let me=null,isBeg=false,clients=[],cur=null,tab="overzicht",editItem=null,pending=[],rec=null,recChunks=[],recStream=null,editTrig=null;
+const C=()=>clients.find(c=>c.id===cur);
+
+/* ---------- inloggen ---------- */
+function authView(mode="in"){
+ $("nav").innerHTML="";$("who").innerHTML="";
+ const t={in:"Inloggen",up:"Account maken",reset:"Wachtwoord vergeten",nieuw:"Nieuw wachtwoord"}[mode];
+ $("main").innerHTML=`<div class="auth panel"><h2>${t}</h2>
+ ${mode==="up"?'<p class="hint">Gebruik het e-mailadres dat je aan Wendy hebt gegeven. Je krijgt een mail om je adres te bevestigen.</p>':""}
+ ${mode==="reset"?'<p class="hint">Je krijgt een mail met een link om een nieuw wachtwoord te kiezen.</p>':""}
+ <form id="af" class="grid" style="grid-template-columns:minmax(0,1fr)">
+ ${mode!=="nieuw"?'<label for="ae">E-mailadres<input id="ae" type="email" autocomplete="email" required></label>':""}
+ ${mode!=="reset"?`<label for="ap">${mode==="nieuw"||mode==="up"?"Kies een wachtwoord <small>minstens 8 tekens</small>":"Wachtwoord"}<input id="ap" type="password" minlength="${mode==="in"?1:8}" autocomplete="${mode==="in"?"current-password":"new-password"}" required></label>`:""}
+ <button class="main" type="submit">${t}</button></form>
+ <div class="row" style="margin-top:12px">${mode!=="in"?'<button class="sm" data-auth="in">Terug naar inloggen</button>':'<button class="sm" data-auth="up">Account maken</button><button class="sm" data-auth="reset">Wachtwoord vergeten</button>'}</div></div>`;
+ $("af").addEventListener("submit",async e=>{
+  e.preventDefault();const b=e.target.querySelector("button");b.disabled=true;
+  const em=$("ae")?.value.trim(),pw=$("ap")?.value,back=location.origin+location.pathname;
+  try{
+   if(mode==="in"){await q(sb.auth.signInWithPassword({email:em,password:pw}))}
+   else if(mode==="up"){await q(sb.auth.signUp({email:em,password:pw,options:{emailRedirectTo:back}}));$("main").innerHTML='<div class="auth panel"><h2>Bijna klaar</h2><p>Kijk in je mail en klik op de link om je e-mailadres te bevestigen. Daarna kun je inloggen.</p></div>'}
+   else if(mode==="reset"){await q(sb.auth.resetPasswordForEmail(em,{redirectTo:back}));toast("Mail verstuurd, kijk in je inbox")}
+   else{await q(sb.auth.updateUser({password:pw}));toast("Nieuw wachtwoord opgeslagen");start()}
+  }catch(err){}finally{b.disabled=false}
+ });
+}
+document.addEventListener("click",e=>{const b=e.target.closest("[data-auth]");if(b)authView(b.dataset.auth)});
+sb.auth.onAuthStateChange((ev,s)=>{if(ev==="PASSWORD_RECOVERY"){authView("nieuw")}else if(ev==="SIGNED_IN"&&!me){start()}else if(ev==="SIGNED_OUT"){me=null;authView()}});
+
+async function start(){
+ const {data:{session}}=await sb.auth.getSession();
+ if(!session){authView();return}
+ me=session.user;
+ isBeg=!!(await q(sb.rpc("hd_ben_begeleider")));
+ await q(sb.rpc("hd_koppel"));
+ clients=await q(sb.from("hd_clienten").select("*").order("naam"));
+ if(!isBeg)clients=clients.filter(c=>c.user_id===me.id);
+ cur=cur&&clients.some(c=>c.id===cur)?cur:clients[0]?.id||null;
+ if(!isBeg&&!cur){$("nav").innerHTML="";whoBar();$("main").innerHTML=`<div class="panel"><h2>Nog niet gekoppeld</h2><p>Je bent ingelogd als ${esc(me.email)}, maar je account is nog niet gekoppeld. Vraag Wendy om dit e-mailadres toe te voegen. Log daarna opnieuw in.</p></div>`;return}
+ if(isBeg&&tab==="overzicht"&&!cur)tab="clienten";
+ whoBar();nav();show();
+}
+function whoBar(){
+ $("who").innerHTML=`${isBeg&&clients.length?`<label for="csel" style="flex-direction:row;align-items:center;gap:6px;font-weight:600">Cliënt<select id="csel">${clients.map(c=>`<option value="${c.id}" ${c.id===cur?"selected":""}>${esc(c.naam)}</option>`).join("")}</select></label>`:""}<span>${esc(me.email)}</span><button class="sm" id="uit">Uitloggen</button>`;
+ $("uit").onclick=()=>sb.auth.signOut();
+ if($("csel"))$("csel").onchange=()=>{cur=$("csel").value;show()};
+}
+function nav(){
+ const T=[["overzicht","Overzicht"],["dagboek",isBeg?"Dagboek":"Mijn dagboek"],["triggers","Triggers en herbelevingen"],["bestanden","Bestanden"]];
+ if(isBeg)T.push(["sessies","Sessies en rapportage"],["clienten","Cliënten"]);
+ $("nav").innerHTML=T.map(([k,n])=>`<button data-tab="${k}" aria-current="${tab===k}">${n}</button>`).join("");
+}
+$("nav").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;tab=b.dataset.tab;nav();show()});
+function show(){stopRec();pending=[];
+ if(!cur&&tab!=="clienten"){$("main").innerHTML='<div class="panel"><h2>Nog geen cliënten</h2><p>Voeg eerst een cliënt toe bij "Cliënten".</p></div>';return}
+ ({overzicht:vOverzicht,dagboek:vDagboek,triggers:vTriggers,bestanden:vBestanden,sessies:vSessies,clienten:vClienten})[tab]();
+}
+
+/* ---------- spraak en bijlagen ---------- */
+function attachUI(id){return `<div class="full" id="${id}"><div class="rec"><button type="button" class="sm" data-rec>Spraakbericht inspreken</button><label class="sm" style="display:inline-flex"><button type="button" class="sm" data-pick>Bestand of spraakbericht toevoegen</button></label><input type="file" data-file multiple hidden accept="audio/*,.pdf,.doc,.docx,.txt,image/*"></div><p class="pending" data-pend></p></div>`}
+function wireAttach(box){
+ const pend=()=>{box.querySelector("[data-pend]").textContent=pending.length?"Wordt opgeslagen: "+pending.map(p=>p.naam).join(", "):""};
+ box.querySelector("[data-pick]").onclick=()=>box.querySelector("[data-file]").click();
+ box.querySelector("[data-file]").onchange=e=>{for(const f of e.target.files)pending.push({blob:f,naam:f.name,mime:f.type});e.target.value="";pend()};
+ box.querySelector("[data-rec]").onclick=async e=>{
+  const b=e.currentTarget;
+  if(rec){rec.stop();return}
+  try{recStream=await navigator.mediaDevices.getUserMedia({audio:true})}catch(err){toast("De microfoon mag niet gebruikt worden. Kies dan 'Bestand of spraakbericht toevoegen'.");return}
+  recChunks=[];rec=new MediaRecorder(recStream);
+  rec.ondataavailable=ev=>ev.data.size&&recChunks.push(ev.data);
+  rec.onstop=()=>{const type=rec.mimeType||"audio/webm",ext=type.includes("mp4")?"m4a":type.includes("ogg")?"ogg":"webm";pending.push({blob:new Blob(recChunks,{type}),naam:"spraakbericht-"+new Date().toLocaleTimeString("nl-NL",{hour:"2-digit",minute:"2-digit"}).replace(":",".")+"."+ext,mime:type});recStream.getTracks().forEach(t=>t.stop());rec=null;b.innerHTML="Spraakbericht inspreken";pend();toast("Spraakbericht klaar. Het wordt opgeslagen als je op Opslaan drukt.")};
+  rec.start();b.innerHTML='<span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--clay);margin-right:8px"></span>Stop opname';
+ };
+}
+function stopRec(){if(rec){try{rec.stop()}catch(e){}}}
+const soortVan=m=>m?.startsWith("audio")?"spraak":m?.startsWith("image")?"afbeelding":/pdf|word|text|document/.test(m||"")?"document":"anders";
+async function uploadAll(dagId){
+ const spraak=[];
+ for(const p of pending){
+  const ext=(p.naam.split(".").pop()||"bin").toLowerCase().replace(/[^a-z0-9]/g,"");
+  const pad=`${cur}/${uid()}.${ext}`;
+  await q(sb.storage.from(BUCKET).upload(pad,p.blob,{contentType:p.mime||"application/octet-stream"}));
+  const [row]=await q(sb.from("hd_bestanden").insert({client_id:cur,pad,naam:p.naam,mime:p.mime,grootte:p.blob.size,soort:soortVan(p.mime),dagboek_id:dagId||null,notitie:p.note||null}).select("id,soort"));
+  if(row.soort==="spraak")spraak.push(row.id);
+ }
+ pending=[];
+ for(const id of spraak)uitschrijven(id);
+}
+async function uitschrijven(id,again){
+ toast("Spraakbericht wordt uitgeschreven…");
+ const {data,error}=await sb.functions.invoke("herstel-ai",{body:{actie:"spraak",bestand_id:id}});
+ if(error){let m="";try{m=(await error.context.json()).error}catch(e){}
+  toast(m==="geen_sleutel"?"Spraak naar tekst staat nog uit. Het spraakbericht is wel bewaard.":"Uitschrijven lukte niet. Probeer later 'Uitschrijven'.");return}
+ toast(`Uitgeschreven en verwerkt${data.taken?`, ${data.taken} ${data.taken===1?"taak":"taken"} toegevoegd`:""}`);
+ if(["dagboek","triggers","bestanden","overzicht"].includes(tab))show();
+}
+async function fillMedia(root){
+ for(const el of root.querySelectorAll("[data-pad]")){
+  const {data}=await sb.storage.from(BUCKET).createSignedUrl(el.dataset.pad,3600);
+  if(data?.signedUrl){if(el.tagName==="A")el.href=data.signedUrl;else el.src=data.signedUrl}
+ }
+}
+const media=f=>f.soort==="spraak"?`<audio controls preload="none" data-pad="${esc(f.pad)}"></audio>`:`<a data-pad="${esc(f.pad)}" target="_blank" rel="noopener">${esc(f.naam)}</a>`;
+
+/* ---------- overzicht ---------- */
+async function vOverzicht(){
+ const [items,taken]=await Promise.all([q(sb.from("hd_items").select("*").eq("client_id",cur)),q(sb.from("hd_taken").select("*").eq("client_id",cur).order("created_at"))]);
+ const open=items.filter(i=>i.data.status!=="klaar");
+ const days=dl=>dl?Math.round((new Date(dl+"T00:00:00")-new Date(new Date().toDateString()))/864e5):null;
+ const ord=(a,b)=>(!!b.data.top-!!a.data.top)||((days(a.data.dl)??9e3)-(days(b.data.dl)??9e3));
+ const dlTag=d=>{const n=days(d);return n==null?"":n<0?`<span class="tag late">Verlopen ${fd(d)}</span>`:`<span class="tag ${n<=7?"late":""}">Nog ${n} dagen</span>`};
+ const card=r=>{const i=r.data,ch=i.checks||[];return `<article class="card"><h4>${i.top?"★ ":""}${esc(i.wat)}</h4>${i.stand?`<p>${esc(i.stand)}</p>`:""}<p class="to">Naar: ${esc(i.wie||"")}</p>
+  ${ch.length?`<ul>${ch.map((c,k)=>`<li class="${c.d?"d":""}"><label><input type="checkbox" data-ck="${r.id}:${k}" ${c.d?"checked":""}><span>${esc(c.t)}</span></label></li>`).join("")}</ul>`:""}
+  <div class="tags">${dlTag(i.dl)}${i.status&&i.status!=="todo"?`<span class="tag">${STAT[i.status]}</span>`:""}<span class="tag">${CATS[i.cat]||""}</span>${i.oymb==="ja"?'<span class="tag oymb">Bij Wendy</span>':""}</div>
+  <div class="row" style="margin-top:8px"><button class="sm" data-edit="${r.id}">Aanpassen</button><button class="sm" data-top="${r.id}">${i.top?"Uit top 3":"In top 3"}</button><button class="sm" data-klaar="${r.id}">Klaar</button></div></article>`};
+ const tops=open.filter(r=>r.data.top).sort(ord);
+ $("main").innerHTML=`
+ ${tops.length?`<div class="panel" style="background:var(--claybg);border-color:transparent"><h2 style="color:var(--clay)">Top 3</h2><ol style="margin:0;padding-left:22px">${tops.map(r=>`<li><b>${esc(r.data.wat)}</b> <span class="note">${esc(r.data.wie||"")}</span> ${dlTag(r.data.dl)}</li>`).join("")}</ol></div>`:""}
+ <div class="panel"><h2>Dingen te regelen</h2>
+  <form id="tf" class="row"><input id="tt" placeholder="Wat moet er geregeld worden?" aria-label="Wat moet er geregeld worden?" style="flex:1 1 220px;width:auto"><select id="tw" aria-label="Wie" style="width:auto"><option>${esc(isBeg?C()?.naam:"Ik")}</option><option>Wendy</option><option>Iemand anders</option></select><input id="td" type="date" aria-label="Datum" style="width:auto"><button class="main">Toevoegen</button></form>
+  <div style="display:grid;gap:6px;margin-top:10px">${taken.filter(t=>!t.klaar).map(t=>`<label class="check" style="border:1px solid var(--line);border-radius:12px;padding:8px 12px"><input type="checkbox" data-tk="${t.id}"><span>${esc(t.tekst)} <small style="color:var(--soft);font-weight:400">${esc(t.wie||"")}${t.datum?" • "+fd(t.datum):""}</small></span></label>`).join("")||'<p class="hint">Niets te regelen.</p>'}</div>
+ </div>
+ <div class="row" style="margin-bottom:10px"><h2 style="font-size:24px;flex:1">Onderwerpen</h2><button class="main" data-edit="new">+ Nieuw onderwerp</button></div>
+ <div class="lanes">${LANES.map(([k,n])=>{const L=open.filter(r=>(r.data.urg||"maand")===k).sort(ord);return `<section class="lane ${k}"><h3>${n}<small>${L.length}</small></h3>${L.map(card).join("")||'<p class="hint">Niets.</p>'}</section>`}).join("")}</div>
+ <div id="ef"></div>
+ ${items.length-open.length?`<details class="panel" style="margin-top:18px"><summary style="font-weight:700;cursor:pointer">Klaar (${items.length-open.length})</summary>${items.filter(i=>i.data.status==="klaar").map(r=>`<p>${esc(r.data.wat)} <button class="sm" data-open="${r.id}">Terugzetten</button></p>`).join("")}</details>`:""}`;
+ const M=$("main"),get=id=>items.find(r=>r.id===id),upd=async(r)=>{await q(sb.from("hd_items").update({data:r.data,updated_at:new Date().toISOString()}).eq("id",r.id))};
+ M.querySelector("#tf").onsubmit=async e=>{e.preventDefault();const t=$("tt").value.trim();if(!t)return;await q(sb.from("hd_taken").insert({client_id:cur,tekst:t,wie:$("tw").value,datum:$("td").value||null}));vOverzicht()};
+ M.onchange=async e=>{
+  const ck=e.target.dataset.ck,tk=e.target.dataset.tk;
+  if(ck){const [id,k]=ck.split(":"),r=get(id);r.data.checks[+k].d=e.target.checked;e.target.closest("li").classList.toggle("d",e.target.checked);await upd(r)}
+  if(tk){await q(sb.from("hd_taken").update({klaar:true}).eq("id",tk));setTimeout(vOverzicht,300)}
+ };
+ M.onclick=async e=>{
+  const b=e.target.closest("button");if(!b)return;
+  if(b.dataset.top){const r=get(b.dataset.top);r.data.top=!r.data.top;await upd(r);vOverzicht()}
+  if(b.dataset.klaar){const r=get(b.dataset.klaar);r.data.status="klaar";r.data.top=false;await upd(r);toast("Naar Klaar");vOverzicht()}
+  if(b.dataset.open){const r=get(b.dataset.open);r.data.status="todo";await upd(r);vOverzicht()}
+  if(b.dataset.edit)itemForm(b.dataset.edit==="new"?null:get(b.dataset.edit));
+ };
+}
+function itemForm(r){
+ const i=r?r.data:{cat:"anders",urg:"maand",status:"todo",checks:[],oymb:"nee"};
+ $("ef").innerHTML=`<div class="panel" style="margin-top:18px"><h2>${r?"Onderwerp aanpassen":"Nieuw onderwerp"}</h2><form id="if" class="grid">
+ <label class="full" for="iw">Wat speelt er?<input id="iw" required value="${esc(i.wat)}"></label>
+ <label for="ic">Onderwerp<select id="ic">${Object.entries(CATS).map(([k,v])=>`<option value="${k}" ${k===i.cat?"selected":""}>${v}</option>`).join("")}</select></label>
+ <label for="iwie">Naar wie?<input id="iwie" value="${esc(i.wie)}"></label>
+ <label for="iu">Hoe urgent?<select id="iu">${LANES.map(([k,n])=>`<option value="${k}" ${k===i.urg?"selected":""}>${n}</option>`).join("")}</select></label>
+ <label for="is">Status<select id="is">${Object.entries(STAT).map(([k,n])=>`<option value="${k}" ${k===i.status?"selected":""}>${n}</option>`).join("")}</select></label>
+ <label for="idl">Uiterste datum<input id="idl" type="date" value="${esc(i.dl)}"></label>
+ <label for="io">Bij Wendy?<select id="io"><option value="nee" ${i.oymb!=="ja"?"selected":""}>Nee, bij anderen</option><option value="ja" ${i.oymb==="ja"?"selected":""}>Ja</option></select></label>
+ <label class="full" for="ist">Wat is de stand nu?<textarea id="ist">${esc(i.stand)}</textarea></label>
+ <label class="full" for="ick">Checklist <small>één stap per regel</small><textarea id="ick">${esc((i.checks||[]).map(c=>c.t).join("\n"))}</textarea></label>
+ <div class="row end full">${r?'<button type="button" class="danger" id="idel">Verwijderen</button>':""}<button type="button" id="icx">Annuleren</button><button class="main">Opslaan</button></div></form></div>`;
+ $("ef").scrollIntoView({behavior:"smooth"});
+ $("icx").onclick=()=>$("ef").innerHTML="";
+ if($("idel"))$("idel").onclick=async()=>{if(!confirmTwice($("idel")))return;await q(sb.from("hd_items").delete().eq("id",r.id));vOverzicht()};
+ $("if").onsubmit=async e=>{e.preventDefault();
+  const old=Object.fromEntries((i.checks||[]).map(c=>[c.t,c.d]));
+  const d={...i,wat:$("iw").value.trim(),cat:$("ic").value,wie:$("iwie").value.trim(),urg:$("iu").value,status:$("is").value,dl:$("idl").value,oymb:$("io").value,stand:$("ist").value.trim(),checks:$("ick").value.split("\n").map(t=>t.trim()).filter(Boolean).map(t=>({t,d:!!old[t]}))};
+  if(r)await q(sb.from("hd_items").update({data:d,updated_at:new Date().toISOString()}).eq("id",r.id));else await q(sb.from("hd_items").insert({client_id:cur,data:d}));
+  toast("Opgeslagen");vOverzicht()};
+}
+function confirmTwice(b){if(b.dataset.sure)return true;b.dataset.sure=1;const t=b.textContent;b.textContent="Zeker weten? Tik nog een keer";setTimeout(()=>{delete b.dataset.sure;b.textContent=t},4000);return false}
+
+/* ---------- dagboek ---------- */
+async function vDagboek(){
+ const [rows,files,trigs]=await Promise.all([q(sb.from("hd_dagboek").select("*").eq("client_id",cur).order("datum",{ascending:false}).limit(200)),q(sb.from("hd_bestanden").select("*").eq("client_id",cur)),q(sb.from("hd_triggers").select("id,naam").eq("client_id",cur))]);
+ const tn=Object.fromEntries(trigs.map(t=>[t.id,t.naam]));
+ const fOf=id=>files.filter(f=>f.dagboek_id===id);
+ const form=isBeg?"":`<div class="panel"><h2>Hoe gaat het vandaag?</h2><p class="hint">Schrijf zoveel of zo weinig als je wilt. Je mag ook een spraakbericht inspreken.</p>
+ <form id="df" class="grid">
+  <div class="full"><div style="font-weight:700;margin-bottom:6px">Hoe voel ik me?</div><div class="mood" id="mood">${MOOD.map((m,k)=>`<button type="button" data-m="${k+1}" aria-pressed="false">${m}</button>`).join("")}</div></div>
+  <label for="d1">Waar liep ik vast?<textarea id="d1"></textarea></label>
+  <label for="d2">Wat heb ik gedaan?<textarea id="d2"></textarea></label>
+  <label for="d3">Wat hielp?<textarea id="d3"></textarea></label>
+  <label for="d4">Wat kan ik de volgende keer doen?<textarea id="d4"></textarea></label>
+  ${attachUI("datt")}
+  <p class="note full">Wendy kan lezen en luisteren naar alles wat je hier deelt. Spraakberichten worden automatisch uitgeschreven.</p>
+  <div class="row end full"><button class="main">Opslaan</button></div></form></div>`;
+ $("main").innerHTML=form+`<div class="panel"><h2>${isBeg?"Dagboek van "+esc(C().naam):"Eerder geschreven"}</h2>
+ ${rows.map(r=>{const d=r.data;return `<div class="entry"><div class="m">${fdt(r.datum)} • ${r.soort==="herbeleving"?"Herbeleving"+(tn[r.trigger_id]?": "+esc(tn[r.trigger_id]):""):"Dagboek"}</div>
+  <dl>${(r.soort==="dagboek"?[["Gevoel",MOOD[d.stemming-1]],["Vastgelopen",d.vast],["Gedaan",d.gedaan],["Hielp",d.hielp],["Volgende keer",d.volgende]]:[["Intensiteit",d.intensiteit!=null?d.intensiteit+" van 10":""],["Wat gebeurde er",d.situatie],["In mijn lijf",d.lijf],["Duur",d.duur],["Wat ik deed",d.deed],["Wat hielp",d.hielp]]).filter(x=>x[1]).map(x=>`<dt>${x[0]}</dt><dd>${esc(x[1])}</dd>`).join("")}</dl>
+  ${d.verslag?`<p style="margin:8px 0 0"><b>Samenvatting:</b> ${esc(d.verslag)}</p>`:""}${d.transcript?`<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700">Uitgeschreven spraakbericht</summary><p style="white-space:pre-wrap">${esc(d.transcript)}</p></details>`:""}
+  ${fOf(r.id).length?`<div class="files" style="margin-top:8px">${fOf(r.id).map(media).join("")}</div>`:""}
+  ${!isBeg?`<div class="row" style="margin-top:6px"><button class="sm danger" data-ddel="${r.id}">Verwijderen</button></div>`:""}</div>`}).join("")||'<p class="hint">Nog niets geschreven.</p>'}</div>`;
+ fillMedia($("main"));
+ $("main").onclick=async e=>{const b=e.target.closest("[data-ddel]");if(b){if(!confirmTwice(b))return;await q(sb.from("hd_dagboek").delete().eq("id",b.dataset.ddel));vDagboek()}};
+ if(isBeg)return;
+ let mood=null;
+ $("mood").onclick=e=>{const b=e.target.closest("[data-m]");if(!b)return;mood=+b.dataset.m;$("mood").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b))};
+ wireAttach($("datt"));
+ $("df").onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector(".main");b.disabled=true;
+  try{const data={stemming:mood,vast:$("d1").value.trim(),gedaan:$("d2").value.trim(),hielp:$("d3").value.trim(),volgende:$("d4").value.trim()};
+  const [row]=await q(sb.from("hd_dagboek").insert({client_id:cur,soort:"dagboek",data,prive:false}).select("id"));
+  await uploadAll(row.id);toast("Opgeslagen. Goed dat je het opschreef.");vDagboek()}catch(err){b.disabled=false}};
+}
+
+/* ---------- triggers en herbelevingen ---------- */
+async function vTriggers(){
+ const [trigs,rows,files]=await Promise.all([q(sb.from("hd_triggers").select("*").eq("client_id",cur).order("naam")),q(sb.from("hd_dagboek").select("*").eq("client_id",cur).eq("soort","herbeleving").order("datum",{ascending:false})),q(sb.from("hd_bestanden").select("*").eq("client_id",cur))]);
+ const of=id=>rows.filter(r=>r.trigger_id===id);
+ const hist=t=>{const L=of(t.id).slice(0,8).reverse();return L.length?`<div class="bars" aria-label="Intensiteit per keer">${L.map(r=>`<div><span>${new Date(r.datum).toLocaleDateString("nl-NL",{day:"numeric",month:"short"})}</span><i class="${(r.data.intensiteit||0)>=7?"h":""}" style="width:${(r.data.intensiteit||0)*10}%"></i><b>${r.data.intensiteit??"-"}</b></div>`).join("")}</div>`:'<p class="hint" style="margin:6px 0 0">Nog geen herbeleving geregistreerd.</p>'};
+ const helped=t=>[...new Set(of(t.id).map(r=>r.data.hielp).filter(Boolean))].slice(0,4);
+ const regForm=isBeg?"":`<div class="panel" id="hpanel"><h2>Herbeleving opschrijven</h2><p class="hint">Doe dit als het weer rustiger is. Eerst voor jezelf zorgen.</p>
+ <form id="hf" class="grid">
+  <label for="ht">Welke trigger?<select id="ht"><option value="">Weet ik niet / nieuw</option>${trigs.map(t=>`<option value="${t.id}">${esc(t.naam)}</option>`).join("")}</select></label>
+  <label for="hd">Wanneer?<input id="hd" type="datetime-local" value="${new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,16)}"></label>
+  <div class="full" id="hplan"></div>
+  <label class="full" for="hi">Hoe heftig was het? <small>0 is rustig, 10 is het ergste</small><span class="int"><input id="hi" type="range" min="0" max="10" value="5" aria-label="Intensiteit"><output id="ho">5</output></span></label>
+  <label for="h1">Wat gebeurde er vlak ervoor?<textarea id="h1"></textarea></label>
+  <label for="h2">Wat voelde ik in mijn lijf?<textarea id="h2"></textarea></label>
+  <label for="h3">Hoe lang duurde het?<input id="h3" placeholder="bijvoorbeeld: 20 minuten"></label>
+  <label for="h4">Wat deed ik?<textarea id="h4"></textarea></label>
+  <label class="full" for="h5">Wat hielp?<textarea id="h5"></textarea></label>
+  ${attachUI("hatt")}
+  <p class="note full">Wendy kan lezen en luisteren naar alles wat je hier deelt.</p>
+  <div class="row end full"><button class="main">Opslaan</button></div></form></div>`;
+ $("main").innerHTML=regForm+`<div class="panel"><div class="row"><h2 style="flex:1">${isBeg?"Triggers van "+esc(C().naam):"Mijn triggers"}</h2>${isBeg?"":'<button class="main" data-tnew>+ Nieuwe trigger</button>'}</div>
+ <p class="hint">Per trigger zie je hoe het eerder ging, wat toen hielp en wat je kunt doen.</p><div id="tform"></div>
+ ${trigs.map(t=>`<div class="entry"><div class="row"><h3 style="flex:1;font-size:19px">${esc(t.naam)}</h3><span class="note">${of(t.id).length} keer</span>${isBeg?"":`<button class="sm" data-tedit="${t.id}">Aanpassen</button>`}</div>
+  <dl>${[["Wat gebeurt er",t.wat_gebeurt],["Signalen in mijn lijf",t.signalen]].filter(x=>x[1]).map(x=>`<dt>${x[0]}</dt><dd>${esc(x[1])}</dd>`).join("")}</dl>
+  ${t.wat_helpt?`<div class="plan"><h3>Wat ik kan doen</h3><div style="white-space:pre-wrap">${esc(t.wat_helpt)}</div></div>`:""}
+  ${helped(t).length?`<p style="margin:6px 0 0;font-size:14px"><b>Eerder hielp:</b> ${helped(t).map(esc).join(" • ")}</p>`:""}
+  ${hist(t)}</div>`).join("")||'<p class="hint">Nog geen triggers.</p>'}</div>
+ <div class="panel"><h2>Alle herbelevingen</h2>${rows.map(r=>{const d=r.data,fs=files.filter(f=>f.dagboek_id===r.id);return `<div class="entry"><div class="m">${fdt(r.datum)} • ${esc(trigs.find(t=>t.id===r.trigger_id)?.naam||"Onbekende trigger")} • ${d.intensiteit??"-"} van 10</div><dl>${[["Wat gebeurde er",d.situatie],["In mijn lijf",d.lijf],["Duur",d.duur],["Wat ik deed",d.deed],["Wat hielp",d.hielp]].filter(x=>x[1]).map(x=>`<dt>${x[0]}</dt><dd>${esc(x[1])}</dd>`).join("")}</dl>${d.verslag?`<p style="margin:6px 0 0"><b>Samenvatting:</b> ${esc(d.verslag)}</p>`:""}${fs.length?`<div class="files" style="margin-top:8px">${fs.map(media).join("")}</div>`:""}</div>`}).join("")||'<p class="hint">Nog geen herbelevingen opgeschreven.</p>'}</div>`;
+ fillMedia($("main"));
+ const tForm=t=>{$("tform").innerHTML=`<form id="trf" class="grid panel" style="background:var(--lane)">
+  <label class="full" for="tn">Naam van de trigger <small>bijvoorbeeld: brief van een instantie, harde geluiden</small><input id="tn" required value="${esc(t?.naam)}"></label>
+  <label for="tw2">Wat gebeurt er dan?<textarea id="tw2">${esc(t?.wat_gebeurt)}</textarea></label>
+  <label for="ts">Signalen in mijn lijf<textarea id="ts">${esc(t?.signalen)}</textarea></label>
+  <label class="full" for="th">Wat kan ik doen? <small>mijn plan voor de volgende keer, één stap per regel</small><textarea id="th">${esc(t?.wat_helpt)}</textarea></label>
+  <div class="row end full">${t?'<button type="button" class="danger" id="tdel">Verwijderen</button>':""}<button type="button" id="tcx">Annuleren</button><button class="main">Opslaan</button></div></form>`;
+  $("tcx").onclick=()=>$("tform").innerHTML="";
+  if($("tdel"))$("tdel").onclick=async()=>{if(!confirmTwice($("tdel")))return;await q(sb.from("hd_triggers").delete().eq("id",t.id));vTriggers()};
+  $("trf").onsubmit=async e=>{e.preventDefault();const d={naam:$("tn").value.trim(),wat_gebeurt:$("tw2").value.trim(),signalen:$("ts").value.trim(),wat_helpt:$("th").value.trim(),prive:false};
+   if(t)await q(sb.from("hd_triggers").update(d).eq("id",t.id));else await q(sb.from("hd_triggers").insert({client_id:cur,...d}));toast("Opgeslagen");vTriggers()};
+ };
+ $("main").onclick=e=>{const b=e.target.closest("button");if(!b)return;if(b.hasAttribute("data-tnew"))tForm(null);if(b.dataset.tedit)tForm(trigs.find(t=>t.id===b.dataset.tedit))};
+ if(isBeg)return;
+ const plan=()=>{const t=trigs.find(x=>x.id===$("ht").value);if(!t){$("hplan").innerHTML="";return}const last=of(t.id)[0];
+  $("hplan").innerHTML=`<div class="plan"><h3>${esc(t.naam)}: wat kan ik doen?</h3><div style="white-space:pre-wrap">${esc(t.wat_helpt||"Nog geen plan. Je kunt het aanvullen bij de trigger.")}</div>${last?`<p style="margin:8px 0 0;font-size:14px"><b>Vorige keer (${fd(last.datum)}):</b> ${last.data.intensiteit??"-"} van 10. ${last.data.hielp?"Toen hielp: "+esc(last.data.hielp):""}</p>`:""}</div>`};
+ $("ht").onchange=plan;
+ $("hi").oninput=()=>$("ho").textContent=$("hi").value;
+ wireAttach($("hatt"));
+ $("hf").onsubmit=async e=>{e.preventDefault();const b=e.target.querySelector(".main");b.disabled=true;
+  try{const data={intensiteit:+$("hi").value,situatie:$("h1").value.trim(),lijf:$("h2").value.trim(),duur:$("h3").value.trim(),deed:$("h4").value.trim(),hielp:$("h5").value.trim()};
+  const [row]=await q(sb.from("hd_dagboek").insert({client_id:cur,soort:"herbeleving",datum:new Date($("hd").value).toISOString(),trigger_id:$("ht").value||null,data,prive:false}).select("id"));
+  await uploadAll(row.id);toast("Opgeslagen");vTriggers()}catch(err){b.disabled=false}};
+}
+
+/* ---------- bestanden ---------- */
+async function vBestanden(){
+ const files=await q(sb.from("hd_bestanden").select("*").eq("client_id",cur).order("created_at",{ascending:false}));
+ $("main").innerHTML=`<div class="panel"><h2>Bestand of spraakbericht toevoegen</h2><p class="hint">Bijvoorbeeld een brief (PDF of Word), een foto van een brief of een spraakbericht. Maximaal 50 MB per bestand.</p>
+ <form id="bf" class="grid"><label class="full" for="bn">Waar gaat het over? <small>optioneel</small><input id="bn"></label>${attachUI("batt")}
+ <div class="row end full"><button class="main">Opslaan</button></div></form></div>
+ <div class="panel"><h2>Alle bestanden</h2><div class="files">${files.map(f=>`<div class="file"><span class="n">${esc(f.naam)}</span><span class="note">${fd(f.created_at)}${f.notitie?" • "+esc(f.notitie):""}${f.dagboek_id?" • bij dagboek":""}</span>${f.soort==="spraak"?media(f):`<a class="sm" data-pad="${esc(f.pad)}" target="_blank" rel="noopener">Openen</a>`}${f.soort==="spraak"&&f.ai_status!=="klaar"?`<button class="sm" data-uit="${f.id}">${f.ai_status==="bezig"?"Bezig… opnieuw":"Uitschrijven"}</button>`:""}${f.transcript?`<details style="flex-basis:100%"><summary style="cursor:pointer;font-weight:700">Uitgeschreven tekst</summary><p style="white-space:pre-wrap;margin:6px 0">${esc(f.transcript)}</p>${f.verslag?.samenvatting?`<p><b>Samenvatting:</b> ${esc(f.verslag.samenvatting)}</p>`:""}</details>`:""}${f.created_by===me.id?`<button class="sm danger" data-fdel="${f.id}">Verwijderen</button>`:""}</div>`).join("")||'<p class="hint">Nog geen bestanden.</p>'}</div></div>`;
+ fillMedia($("main"));wireAttach($("batt"));
+ $("bf").onsubmit=async e=>{e.preventDefault();if(!pending.length){toast("Kies eerst een bestand of spreek iets in");return}const b=e.target.querySelector(".main");b.disabled=true;
+  try{const note=$("bn").value.trim(),n=pending.length;for(const p of pending)p.note=note;
+   const ids=[];await uploadAll(null);if(note){const last=await q(sb.from("hd_bestanden").select("id").eq("client_id",cur).eq("created_by",me.id).order("created_at",{ascending:false}).limit(n));await q(sb.from("hd_bestanden").update({notitie:note}).in("id",last.map(x=>x.id)))}
+   toast("Opgeslagen");vBestanden()}catch(err){b.disabled=false}};
+ $("main").onclick=async e=>{const u=e.target.closest("[data-uit]");if(u){u.disabled=true;await uitschrijven(u.dataset.uit);return}const b=e.target.closest("[data-fdel]");if(!b)return;if(!confirmTwice(b))return;const f=files.find(x=>x.id===b.dataset.fdel);await q(sb.storage.from(BUCKET).remove([f.pad]));await q(sb.from("hd_bestanden").delete().eq("id",f.id));vBestanden()};
+}
+
+/* ---------- sessies en rapportage (begeleider) ---------- */
+async function vSessies(){
+ const [ses,budR,dag,trigs]=await Promise.all([q(sb.from("hd_sessies").select("*").eq("client_id",cur).order("datum",{ascending:false})),q(sb.from("hd_budget").select("*").eq("client_id",cur)),q(sb.from("hd_dagboek").select("soort,datum,trigger_id,data").eq("client_id",cur)),q(sb.from("hd_triggers").select("id,naam").eq("client_id",cur))]);
+ const bud=budR[0]||{client_id:cur,totaal:5000,eerder:0,tarief:0};
+ const sum=s=>ses.filter(x=>x.soort===s).reduce((a,x)=>a+(+x.bedrag||0),0),hrs=s=>ses.filter(x=>x.soort===s).reduce((a,x)=>a+(+x.duur||0),0),cnt=s=>ses.filter(x=>x.soort===s).length;
+ const tr=sum("trauma"),pe=sum("persoonlijk"),rest=(+bud.totaal||0)-(+bud.eerder||0)-tr-pe,pc=v=>bud.totaal>0?Math.max(0,Math.min(100,100*v/bud.totaal)):0;
+ $("main").innerHTML=`<div class="panel"><h2>Budget en verdeling</h2>
+ <form id="budf" class="row"><label for="bt">Totaal (€)<input id="bt" type="number" step="1" value="${esc(bud.totaal)}" style="width:8em"></label><label for="be">Al gebruikt vóór de app (€)<input id="be" type="number" step="1" value="${esc(bud.eerder)}" style="width:8em"></label><label for="br">Uurtarief (€)<input id="br" type="number" step="0.01" value="${esc(bud.tarief)}" style="width:8em"></label><button class="sm" style="align-self:end">Bewaar</button><div style="margin-left:auto"><div class="note">Nog over</div><div class="big" style="color:${rest<0?"var(--clay)":"inherit"}">${eur(rest)}</div></div></form>
+ <div class="bar" style="margin-top:12px" role="img" aria-label="Verdeling budget"><i style="width:${pc(bud.eerder)}%;background:#9aa79c"></i><i style="width:${pc(tr)}%;background:var(--green)"></i><i style="width:${pc(pe)}%;background:var(--sun)"></i></div>
+ <div class="legend"><span><i class="dotc" style="background:#9aa79c"></i>Eerder ${eur(bud.eerder)}</span><span><i class="dotc" style="background:var(--green)"></i>Trauma: ${cnt("trauma")} sessies, ${hrs("trauma")} uur, ${eur(tr)}</span><span><i class="dotc" style="background:var(--sun)"></i>Persoonlijk: ${cnt("persoonlijk")} sessies, ${hrs("persoonlijk")} uur, ${eur(pe)}</span></div></div>
+ <div class="panel"><h2>Sessie toevoegen</h2><p class="hint">Alleen jij ziet je sessies en notities.</p><form id="sf" class="grid">
+  <label for="s1">Datum<input id="s1" type="date" required value="${new Date().toISOString().slice(0,10)}"></label>
+  <label for="s2">Soort<select id="s2"><option value="trauma">Traumasessie (lichaam, regulatie)</option><option value="persoonlijk">Persoonlijke sessie (praktisch, regelen)</option></select></label>
+  <label for="s3">Duur (uren)<input id="s3" type="number" step="0.25" min="0" required></label>
+  <label for="s4">Bedrag (€) <small>leeg = uren × tarief</small><input id="s4" type="number" step="0.01" min="0"></label>
+  <label class="full" for="s5">Wat heb ik gedaan?<textarea id="s5"></textarea></label>
+  <label for="s6">Wat zag ik? <small>eigen waarneming, geen diagnose</small><textarea id="s6"></textarea></label>
+  <label for="s7">Wat vertelt de cliënt zelf?<textarea id="s7"></textarea></label>
+  <label class="full" for="s8">Te regelen na deze sessie <small>één per regel</small><textarea id="s8"></textarea></label>
+  <div class="row end full"><button class="main">Sessie opslaan</button></div></form></div>
+ <div class="panel"><h2>Sessies</h2>${ses.map(s=>`<div class="entry"><div class="row"><b style="flex:1">${fd(s.datum)} • ${s.soort==="trauma"?"Traumasessie":"Persoonlijke sessie"} • ${s.duur} uur</b><span>${eur(s.bedrag)}</span><button class="sm danger" data-sdel="${s.id}">Verwijderen</button></div><dl>${[["Gedaan",s.gedaan],["Gezien",s.waarneming],["Cliënt vertelt",s.client_vertelt]].filter(x=>x[1]).map(x=>`<dt>${x[0]}</dt><dd>${esc(x[1])}</dd>`).join("")}</dl></div>`).join("")||'<p class="hint">Nog geen sessies.</p>'}</div>
+ <div class="panel"><h2>Rapportage</h2><div class="row" style="margin-bottom:10px"><label for="rv" style="flex-direction:row;align-items:center;gap:6px">Van<input id="rv" type="date" style="width:auto"></label><label for="rt" style="flex-direction:row;align-items:center;gap:6px">Tot<input id="rt" type="date" style="width:auto"></label><button class="sm" id="rm">Maak rapportage</button><button class="sm" id="rai">Laat AI het netjes uitschrijven</button><button class="sm main" id="rk">Kopieer</button></div>
+ <textarea id="rx" style="min-height:280px" aria-label="Rapportage"></textarea><p class="note">Controleer de tekst zelf. Deel alleen met toestemming van de cliënt.</p></div>`;
+ $("budf").onsubmit=async e=>{e.preventDefault();await q(sb.from("hd_budget").upsert({client_id:cur,totaal:+$("bt").value||0,eerder:+$("be").value||0,tarief:+$("br").value||0,updated_at:new Date().toISOString()}));toast("Bewaard");vSessies()};
+ $("sf").onsubmit=async e=>{e.preventDefault();const duur=+$("s3").value||0;
+  await q(sb.from("hd_sessies").insert({client_id:cur,datum:$("s1").value,soort:$("s2").value,duur,bedrag:$("s4").value!==""?+$("s4").value:duur*(+bud.tarief||0),gedaan:$("s5").value.trim(),waarneming:$("s6").value.trim(),client_vertelt:$("s7").value.trim()}));
+  const T=$("s8").value.split("\n").map(t=>t.trim()).filter(Boolean);if(T.length)await q(sb.from("hd_taken").insert(T.map(t=>({client_id:cur,tekst:t,wie:C().naam,bron:"sessie "+$("s1").value}))));
+  toast("Sessie opgeslagen");vSessies()};
+ $("main").onclick=async e=>{const b=e.target.closest("[data-sdel]");if(b){if(!confirmTwice(b))return;await q(sb.from("hd_sessies").delete().eq("id",b.dataset.sdel));vSessies()}};
+ $("rm").onclick=async()=>{
+  const v=$("rv").value,t=$("rt").value,inP=d=>(!v||d>=v)&&(!t||d<=t+"T23:59");
+  const L=ses.filter(s=>inP(s.datum)).sort((a,b)=>a.datum<b.datum?-1:1);
+  const H=dag.filter(d=>d.soort==="herbeleving"&&inP(d.datum)),D=dag.filter(d=>d.soort==="dagboek"&&inP(d.datum));
+  const taken=await q(sb.from("hd_taken").select("tekst,wie").eq("client_id",cur).eq("klaar",false));
+  const R=[`Rapportage begeleiding ${C().naam}`,`Begeleider: Wendy van der Vecht, Open Your Mind & Body`,`Periode: ${L.length?fd(L[0].datum)+" tot en met "+fd(L[L.length-1].datum):"(geen sessies)"}`,"",
+   `Sessies: ${L.length}`,`- Traumasessies: ${L.filter(s=>s.soort==="trauma").length} (${L.filter(s=>s.soort==="trauma").reduce((a,s)=>a+ +s.duur,0)} uur)`,`- Persoonlijke sessies: ${L.filter(s=>s.soort==="persoonlijk").length} (${L.filter(s=>s.soort==="persoonlijk").reduce((a,s)=>a+ +s.duur,0)} uur)`,""];
+  L.forEach(s=>{R.push(`${fd(s.datum)} – ${s.soort==="trauma"?"Traumasessie":"Persoonlijke sessie"}, ${s.duur} uur`);s.gedaan&&R.push("  Gedaan: "+s.gedaan);s.waarneming&&R.push("  Eigen waarneming: "+s.waarneming);s.client_vertelt&&R.push("  Cliënt vertelt: "+s.client_vertelt)});
+  R.push("",`Zelfregistratie door de cliënt in deze periode:`,`- Dagboekberichten: ${D.length}`,`- Geregistreerde herbelevingen: ${H.length}`);
+  const V=dag.filter(d=>inP(d.datum)&&d.data?.verslag);if(V.length){R.push("","Wat de cliënt zelf insprak of schreef (samenvattingen):");V.forEach(d=>R.push(`- ${fd(d.datum)}: ${d.data.verslag}`))}
+  trigs.forEach(tg=>{const x=H.filter(h=>h.trigger_id===tg.id);if(x.length){const avg=x.reduce((a,h)=>a+(+h.data.intensiteit||0),0)/x.length;R.push(`  ${tg.naam}: ${x.length} keer, gemiddeld ${avg.toFixed(1)} van 10`)}});
+  if(taken.length){R.push("","Nog te regelen:");taken.forEach(k=>R.push(`- ${k.tekst} (${k.wie||""})`))}
+  R.push("","Deze rapportage beschrijft eigen waarnemingen van de begeleider en wat de cliënt zelf vertelt of registreert. Er worden geen diagnoses gesteld.");
+  $("rx").value=R.join("\n")};
+ $("rai").onclick=async()=>{if(!$("rx").value)await $("rm").onclick();const b=$("rai");b.disabled=true;b.textContent="Bezig…";
+  const {data,error}=await sb.functions.invoke("herstel-ai",{body:{actie:"rapport",tekst:$("rx").value}});
+  b.disabled=false;b.textContent="Laat AI het netjes uitschrijven";
+  if(error){let m="";try{m=(await error.context.json()).error}catch(e){}toast(m==="geen_sleutel"?"AI staat nog uit: zet eerst de sleutel in Supabase.":"Uitschrijven lukte niet");return}
+  $("rx").value=data.tekst};
+ $("rk").onclick=async()=>{try{await navigator.clipboard.writeText($("rx").value);toast("Gekopieerd")}catch(e){$("rx").select();toast("Selecteer en kopieer de tekst")}};
+}
+
+/* ---------- cliënten (begeleider) ---------- */
+async function vClienten(){
+ $("main").innerHTML=`<div class="panel"><h2>Cliënt toevoegen</h2><p class="hint">Vul het e-mailadres in waarmee de cliënt een account maakt. Zodra zij inlogt met een bevestigd adres, wordt ze vanzelf gekoppeld.</p>
+ <form id="cf" class="grid"><label for="cn">Naam<input id="cn" required></label><label for="ce">E-mailadres<input id="ce" type="email" required></label><div class="row end full"><button class="main">Toevoegen</button></div></form></div>
+ <div class="panel"><h2>Mijn cliënten</h2>${clients.map(c=>`<div class="entry"><div class="row"><b style="flex:1">${esc(c.naam)}</b><span class="note">${esc(c.email)} • ${c.user_id?"gekoppeld":"wacht op eerste login"}</span></div>
+ <div class="row" style="margin-top:8px"><label class="sm" style="display:inline-flex"><button type="button" class="sm" data-imp="${c.id}">Gegevens laden uit bestand (.json)</button></label></div></div>`).join("")||'<p class="hint">Nog geen cliënten.</p>'}
+ <input type="file" id="impf" accept=".json,application/json" hidden></div>`;
+ $("cf").onsubmit=async e=>{e.preventDefault();await q(sb.from("hd_clienten").insert({naam:$("cn").value.trim(),email:$("ce").value.trim().toLowerCase()}));toast("Toegevoegd");await start();tab="clienten";nav();vClienten()};
+ let impC=null;
+ $("main").onclick=e=>{const b=e.target.closest("[data-imp]");if(b){impC=b.dataset.imp;$("impf").click()}};
+ $("impf").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f||!impC)return;
+  try{const d=JSON.parse(await f.text());const items=(d.items||[]).map(({id,ex,bron,...rest})=>({client_id:impC,data:{...rest,bron}}));
+   if(items.length)await q(sb.from("hd_items").insert(items));
+   const tk=(d.tasks||[]).map(t=>({client_id:impC,tekst:t.t,wie:t.wie,datum:t.dl||null,klaar:!!t.d,bron:t.bron||null}));if(tk.length)await q(sb.from("hd_taken").insert(tk));
+   if(d.bud)await q(sb.from("hd_budget").upsert({client_id:impC,totaal:+d.bud.tot||0,eerder:+d.bud.eer||0,tarief:+d.bud.tar||0}));
+   toast(`${items.length} onderwerpen en ${tk.length} taken geladen`)}catch(err){toast("Dit bestand kan ik niet lezen")}};
+}
+
+start();
+}
+</script>
+</body>
+</html>
