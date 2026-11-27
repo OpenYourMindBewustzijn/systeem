@@ -77,6 +77,7 @@ label small{font-weight:400;color:var(--soft);font-size:13px}
 .mood button[aria-pressed=true]{background:var(--green);color:#fff;border-color:var(--green)}
 .int{display:flex;align-items:center;gap:12px}
 .int output{font:700 28px Outfit,sans-serif;width:2.2em;text-align:right}
+.prog{height:10px;border-radius:6px;background:var(--lane);border:1px solid var(--line);overflow:hidden;margin:8px 0 4px}.prog i{display:block;height:100%;background:var(--green)}
 .bars{display:grid;gap:4px;margin-top:8px}
 .bars div{display:grid;grid-template-columns:6.5em minmax(0,1fr) 2em;gap:8px;align-items:center;font-size:13px}
 .bars i{display:block;height:12px;border-radius:6px;background:var(--green)}
@@ -185,14 +186,14 @@ function whoBar(){
  if($("csel"))$("csel").onchange=()=>{cur=$("csel").value;show()};
 }
 function nav(){
- const T=[["assistent","Assistent"],["overzicht","Overzicht"],["agenda","Agenda"],["dagboek",isBeg?"Dagboek":"Mijn dagboek"],["triggers","Triggers en herbelevingen"],["bestanden","Dossiers"],["verslagen","Verslagen"]];
+ const T=[["assistent","Assistent"],["overzicht","Overzicht"],["doelen",isBeg?"Doelen":"Mijn doelen"],["agenda","Agenda"],["dagboek",isBeg?"Dagboek":"Mijn dagboek"],["triggers","Triggers en herbelevingen"],["bestanden","Dossiers"],["verslagen","Verslagen"]];
  if(isBeg)T.push(["sessies","Sessies en rapportage"],["clienten","Cliënten"]);
  $("nav").innerHTML=T.map(([k,n])=>`<button data-tab="${k}" aria-current="${tab===k}">${n}</button>`).join("");
 }
 $("nav").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;tab=b.dataset.tab;nav();show()});
 function show(){stopRec();pending=[];
  if(!cur&&tab!=="clienten"){$("main").innerHTML='<div class="panel"><h2>Nog geen cliënten</h2><p>Voeg eerst een cliënt toe bij "Cliënten".</p></div>';return}
- ({assistent:vAssistent,overzicht:vOverzicht,agenda:vAgenda,verslagen:vVerslagen,dagboek:vDagboek,triggers:vTriggers,bestanden:vBestanden,sessies:vSessies,clienten:vClienten})[tab]();
+ ({assistent:vAssistent,overzicht:vOverzicht,doelen:vDoelen,agenda:vAgenda,verslagen:vVerslagen,dagboek:vDagboek,triggers:vTriggers,bestanden:vBestanden,sessies:vSessies,clienten:vClienten})[tab]();
 }
 
 /* ---------- spraak en bijlagen ---------- */
@@ -243,7 +244,7 @@ const media=f=>f.soort==="spraak"?`<audio controls preload="none" data-pad="${es
 
 /* ---------- overzicht ---------- */
 async function vOverzicht(){
- const [items,taken,afs]=await Promise.all([q(sb.from("hd_items").select("*").eq("client_id",cur)),q(sb.from("hd_taken").select("*").eq("client_id",cur).order("created_at")),q(sb.from("hd_afspraken").select("id,titel,start,plaats").eq("client_id",cur).gte("start",new Date(Date.now()-36e5).toISOString()).order("start").limit(3))]);
+ const [items,taken,afs,doelen]=await Promise.all([q(sb.from("hd_items").select("*").eq("client_id",cur)),q(sb.from("hd_taken").select("*").eq("client_id",cur).order("created_at")),q(sb.from("hd_afspraken").select("id,titel,start,plaats").eq("client_id",cur).gte("start",new Date(Date.now()-36e5).toISOString()).order("start").limit(3)),q(sb.from("hd_doelen").select("id,titel,stappen,soort").eq("client_id",cur).eq("status","bezig").order("volgorde").order("created_at"))]);
  const open=items.filter(i=>!["klaar","vervallen"].includes(i.data.status)),done=items.filter(i=>i.data.status==="klaar"),verv=items.filter(i=>i.data.status==="vervallen");
  const recent=d=>d.gewijzigd&&(Date.now()-new Date(d.gewijzigd))<7*864e5;
  const hist=i=>(i.historie||[]).length?`<details style="margin-top:6px"><summary style="cursor:pointer;font-size:14px;font-weight:700">Geschiedenis (${i.historie.length})</summary>${[...i.historie].reverse().map(h=>`<p style="font-size:14px;margin:4px 0"><b>${fd(h.op)}</b> • ${esc(h.door)}: ${esc(h.wat)}</p>`).join("")}</details>`:"";
@@ -257,6 +258,7 @@ async function vOverzicht(){
  const tops=open.filter(r=>r.data.top).sort(ord);
  $("main").innerHTML=`
  ${tops.length?`<div class="panel" style="background:var(--claybg);border-color:transparent"><h2 style="color:var(--clay)">Top 3</h2><ol style="margin:0;padding-left:22px">${tops.map(r=>`<li><b>${esc(r.data.wat)}</b> <span class="note">${esc(r.data.wie||"")}</span> ${dlTag(r.data.dl)}</li>`).join("")}</ol></div>`:""}
+ ${doelen.length?`<div class="panel"><div class="row"><h2 style="flex:1">Doelen</h2><button class="sm" data-goto="doelen">Alle doelen</button></div>${doelen.map(d=>{const p=pct(d);return `<div style="margin:6px 0"><b>${esc(d.titel)}</b>${p!=null?`<div class="prog"><i style="width:${p}%"></i></div><span class="note">${p}% van de stappen gedaan</span>`:""}</div>`}).join("")}</div>`:""}
  ${afs.length?`<div class="panel"><h2>Eerstvolgende afspraken</h2>${afs.map(a=>`<p style="margin:4px 0"><b>${new Date(a.start).toLocaleString("nl-NL",{weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</b> • ${esc(a.titel)}${a.plaats?" • "+esc(a.plaats):""}</p>`).join("")}</div>`:""}
  <div class="panel"><h2>Dingen te regelen</h2>
   <form id="tf" class="row"><input id="tt" placeholder="Wat moet er geregeld worden?" aria-label="Wat moet er geregeld worden?" style="flex:1 1 220px;width:auto"><select id="tw" aria-label="Wie" style="width:auto"><option>${esc(isBeg?C()?.naam:"Ik")}</option><option>Wendy</option><option>Iemand anders</option></select><input id="td" type="date" aria-label="Datum" style="width:auto"><button class="main">Toevoegen</button></form>
@@ -276,6 +278,7 @@ async function vOverzicht(){
  };
  M.onclick=async e=>{
   const b=e.target.closest("button");if(!b)return;
+  if(b.dataset.goto){tab=b.dataset.goto;nav();show();return}
   if(b.dataset.top){const r=get(b.dataset.top);r.data.top=!r.data.top;await upd(r);vOverzicht()}
   if(b.dataset.klaar){const r=get(b.dataset.klaar);r.data.status="klaar";r.data.top=false;logH(r.data,"Afgerond");await upd(r);toast("Naar Klaar");vOverzicht()}
   if(b.dataset.open){const r=get(b.dataset.open);const was=STAT[r.data.status];r.data.status="todo";logH(r.data,`Teruggezet (was: ${was})`);await upd(r);vOverzicht()}
@@ -411,6 +414,57 @@ async function vTriggers(){
   try{const data={intensiteit:+$("hi").value,situatie:$("h1").value.trim(),lijf:$("h2").value.trim(),duur:$("h3").value.trim(),deed:$("h4").value.trim(),hielp:$("h5").value.trim()};
   const [row]=await q(sb.from("hd_dagboek").insert({client_id:cur,soort:"herbeleving",datum:new Date($("hd").value).toISOString(),trigger_id:$("ht").value||null,data,prive:false}).select("id"));
   await uploadAll(row.id);toast("Opgeslagen");vTriggers()}catch(err){b.disabled=false}};
+}
+
+
+/* ---------- doelen ---------- */
+const DSOORT=[["herstel","Mijn herstel","Rust, lijf, gevoel en dagelijks leven"],["praktisch","Praktisch en dossiers","Zaken die geregeld moeten worden"]];
+const DST={bezig:"Bezig",bereikt:"Bereikt",gestopt:"Niet meer actueel"};
+const pct=d=>{const s=d.stappen||[];return s.length?Math.round(s.filter(x=>x.d).length/s.length*100):null};
+async function vDoelen(){
+ const [rows]=await Promise.all([q(sb.from("hd_doelen").select("*").eq("client_id",cur).order("volgorde").order("created_at")),loadCases()]);
+ const cn=id=>(window._cases||[]).find(c=>c.id===id)?.naam;
+ const door=()=>isBeg?"Wendy":(C()?.naam||"Ik");
+ const hist=d=>(d.historie||[]).length?`<details style="margin-top:6px"><summary style="cursor:pointer;font-size:14px;font-weight:700">Geschiedenis (${d.historie.length})</summary>${[...d.historie].reverse().map(h=>`<p style="font-size:14px;margin:4px 0"><b>${fd(h.op)}</b> • ${esc(h.door)}: ${esc(h.wat)}</p>`).join("")}</details>`:"";
+ const card=d=>{const p=pct(d),st=d.stappen||[];return `<article class="entry"><div class="row"><h3 style="flex:1;font-size:19px">${d.status==="bereikt"?"✓ ":""}${esc(d.titel)}</h3>${d.streefdatum?`<span class="tag">Doel: ${fd(d.streefdatum)}</span>`:""}</div>
+  ${d.waarom?`<p style="margin:4px 0"><b>Waarom:</b> ${esc(d.waarom)}</p>`:""}
+  ${d.merk_ik?`<p style="margin:4px 0"><b>Zo merk ik dat het lukt:</b> ${esc(d.merk_ik)}</p>`:""}
+  ${p!=null?`<div class="prog" aria-label="${p} procent gedaan"><i style="width:${p}%"></i></div><p class="note" style="margin:0">${st.filter(x=>x.d).length} van ${st.length} stappen gedaan</p>`:""}
+  ${st.length?`<ul style="list-style:none;padding:0;margin:6px 0">${st.map((x,k)=>`<li><label class="check"><input type="checkbox" data-dst="${d.id}:${k}" ${x.d?"checked":""} ${d.status!=="bezig"?"disabled":""}><span style="${x.d?"text-decoration:line-through;color:var(--soft)":""}">${esc(x.t)}</span></label></li>`).join("")}</ul>`:""}
+  <div class="tags">${cn(d.case_id)?`<span class="tag">Case: ${esc(cn(d.case_id))}</span>`:""}${d.status!=="bezig"?`<span class="tag">${DST[d.status]} ${fd(d.updated_at)}</span>`:""}</div>${hist(d)}
+  <div class="row" style="margin-top:8px">${d.status==="bezig"?`<button class="sm" data-dedit="${d.id}">Aanpassen</button><button class="sm" data-dset="${d.id}:bereikt">Bereikt</button><button class="sm" data-dset="${d.id}:gestopt">Niet meer actueel</button>`:`<button class="sm" data-dset="${d.id}:bezig">Weer mee bezig</button>`}</div></article>`};
+ const bezig=rows.filter(d=>d.status==="bezig"),klaar=rows.filter(d=>d.status==="bereikt"),weg=rows.filter(d=>d.status==="gestopt");
+ $("main").innerHTML=`<div class="row" style="margin-bottom:10px"><h2 style="font-size:24px;flex:1">${isBeg?"Doelen van "+esc(C().naam):"Mijn doelen"}</h2><button class="main" data-dnew>+ Nieuw doel</button></div>
+ <p class="hint">Een doel is waar je naartoe wilt. Maak het klein en haalbaar. Vink de stappen af als ze gedaan zijn.</p><div id="dform"></div>
+ ${DSOORT.map(([k,n,u])=>`<div class="panel"><h2>${n}</h2><p class="hint" style="margin-top:0">${u}</p>${bezig.filter(d=>d.soort===k).map(card).join("")||'<p class="hint">Nog geen doelen.</p>'}</div>`).join("")}
+ ${klaar.length?`<details class="panel" open><summary style="font-weight:700;cursor:pointer">Bereikt (${klaar.length})</summary>${klaar.map(card).join("")}</details>`:""}
+ ${weg.length?`<details class="panel" style="margin-top:12px"><summary style="font-weight:700;cursor:pointer">Niet meer actueel (${weg.length})</summary>${weg.map(card).join("")}</details>`:""}`;
+ const save=async(d,patch,wat)=>{const h=[...(d.historie||[]),{op:new Date().toISOString(),door:door(),wat}];await q(sb.from("hd_doelen").update({...patch,historie:h,updated_at:new Date().toISOString()}).eq("id",d.id))};
+ const form=d=>{$("dform").innerHTML=`<form id="dfm" class="grid panel" style="background:var(--lane)"><h2 class="full">${d?"Doel aanpassen":"Nieuw doel"}</h2>
+  <label class="full" for="dt">Wat is het doel? <small>bijvoorbeeld: 's nachts vaker doorslapen</small><input id="dt" required value="${esc(d?.titel)}"></label>
+  <label for="ds">Soort<select id="ds">${DSOORT.map(([k,n])=>`<option value="${k}" ${d?.soort===k?"selected":""}>${n}</option>`).join("")}</select></label>
+  <label for="dd">Wanneer wil je het bereikt hebben? <small>mag leeg</small><input id="dd" type="date" value="${d?.streefdatum||""}"></label>
+  <label class="full" for="dw">Waarom is dit belangrijk?<textarea id="dw">${esc(d?.waarom)}</textarea></label>
+  <label class="full" for="dm">Hoe merk je dat het lukt?<textarea id="dm">${esc(d?.merk_ik)}</textarea></label>
+  <label class="full" for="dk">Kleine stappen <small>één stap per regel</small><textarea id="dk">${esc((d?.stappen||[]).map(x=>x.t).join("\n"))}</textarea></label>
+  <label class="full" for="dc">Hoort bij case <small>mag leeg</small><select id="dc"><option value="">Geen case</option>${(window._cases||[]).map(c=>`<option value="${c.id}" ${d?.case_id===c.id?"selected":""}>${esc(c.naam)}</option>`).join("")}</select></label>
+  <div class="row end full">${d?'<button type="button" class="danger" id="ddel">Verwijderen</button>':""}<button type="button" id="dcx">Annuleren</button><button class="main">Opslaan</button></div></form>`;
+  $("dform").scrollIntoView({behavior:"smooth"});
+  $("dcx").onclick=()=>$("dform").innerHTML="";
+  if($("ddel"))$("ddel").onclick=async()=>{if(!confirmTwice($("ddel")))return;await q(sb.from("hd_doelen").delete().eq("id",d.id));vDoelen()};
+  $("dfm").onsubmit=async e=>{e.preventDefault();
+   const oud=d?.stappen||[],stappen=$("dk").value.split("\n").map(t=>t.trim()).filter(Boolean).map(t=>({t,d:!!oud.find(x=>x.t===t&&x.d)}));
+   const v={titel:$("dt").value.trim(),soort:$("ds").value,streefdatum:$("dd").value||null,waarom:$("dw").value.trim(),merk_ik:$("dm").value.trim(),stappen,case_id:$("dc").value||null};
+   if(d)await save(d,v,"Doel aangepast");else await q(sb.from("hd_doelen").insert({client_id:cur,...v,historie:[{op:new Date().toISOString(),door:door(),wat:"Doel gemaakt"}]}));
+   toast("Opgeslagen");vDoelen()};
+ };
+ $("main").onclick=async e=>{const b=e.target.closest("button");if(!b)return;
+  if(b.hasAttribute("data-dnew"))form(null);
+  if(b.dataset.dedit)form(rows.find(d=>d.id===b.dataset.dedit));
+  if(b.dataset.dset){const [id,st]=b.dataset.dset.split(":"),d=rows.find(x=>x.id===id);await save(d,{status:st},st==="bezig"?"Weer mee bezig":DST[st]);toast(st==="bereikt"?"Mooi! Doel bereikt.":"Opgeslagen");vDoelen()}};
+ $("main").onchange=async e=>{const c=e.target.closest("[data-dst]");if(!c)return;const [id,k]=c.dataset.dst.split(":"),d=rows.find(x=>x.id===id);
+  const st=(d.stappen||[]).map((x,i)=>i===+k?{...x,d:c.checked}:x);await save(d,{stappen:st},(c.checked?"Stap gedaan: ":"Stap weer open: ")+st[+k].t);
+  const alle=st.length&&st.every(x=>x.d);toast(alle?"Alle stappen gedaan. Is het doel bereikt? Tik dan op Bereikt.":"Opgeslagen");vDoelen()};
 }
 
 /* ---------- bestanden ---------- */
